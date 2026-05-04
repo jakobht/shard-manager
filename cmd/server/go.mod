@@ -25,7 +25,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pborman/uuid v0.0.0-20180906182336-adf5a7427709 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/uber-go/tally v3.3.15+incompatible // indirect
 	github.com/uber/cadence-idl v0.0.0-20260226231252-039e65827dda // indirect
 	github.com/uber/ringpop-go v0.8.5 // indirect

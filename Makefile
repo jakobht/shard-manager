@@ -489,6 +489,12 @@ cadence-server: $(BINS_DEPEND_ON)
 	$Q echo "compiling cadence-server with OS: $(GOOS), ARCH: $(GOARCH)"
 	$Q ./scripts/build-with-ldflags.sh -o $@ cmd/server/main.go
 
+BINS += smctl
+TOOLS += smctl
+smctl: $(BINS_DEPEND_ON)
+	$Q echo "compiling smctl with OS: $(GOOS), ARCH: $(GOARCH)"
+	$Q ./scripts/build-with-ldflags.sh -o $@ cmd/smctl/main.go
+
 BINS += cadence-canary
 cadence-canary: $(BINS_DEPEND_ON)
 	$Q echo "compiling cadence-canary with OS: $(GOOS), ARCH: $(GOARCH)"

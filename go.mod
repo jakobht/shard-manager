@@ -22,12 +22,13 @@ require (
 	github.com/m3db/prometheus_client_golang v0.8.1
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pborman/uuid v0.0.0-20180906182336-adf5a7427709
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/uber-go/tally v3.3.15+incompatible
 	github.com/uber/cadence-idl v0.0.0-20260226231252-039e65827dda
 	github.com/uber/ringpop-go v0.8.5
 	github.com/uber/tchannel-go v1.22.2 // indirect
 	github.com/urfave/cli/v2 v2.27.4
+	github.com/urfave/cli/v3 v3.8.0
 	go.etcd.io/etcd/client/v3 v3.5.5
 	go.uber.org/atomic v1.10.0
 	go.uber.org/cadence v0.19.0
