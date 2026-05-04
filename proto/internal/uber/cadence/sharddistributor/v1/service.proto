@@ -22,6 +22,9 @@ syntax = "proto3";
 
 package uber.cadence.sharddistributor.v1;
 
+import "google/protobuf/timestamp.proto";
+import "uber/cadence/sharddistributor/v1/executor.proto";
+
 option go_package = "github.com/cadence-workflow/shard-manager/.gen/proto/sharddistributor/v1;sharddistributorv1";
 
 // ShardDistributorAPI is used to query shard distributor for the current owner of a shard
@@ -52,6 +55,30 @@ message NamespaceNotFoundError {
 message ShardNotFoundError {
   string namespace = 1;
   string shard_key = 2;
+}
+
+message GetNamespaceStateRequest {
+  string namespace = 1;
+}
+
+message GetNamespaceStateResponse {
+  string namespace = 1;
+  repeated NamespaceExecutorState executors = 2;
+}
+
+message NamespaceExecutorState {
+  string executor_id = 1;
+  ExecutorStatus status = 2;
+  google.protobuf.Timestamp last_heartbeat = 3;
+  map<string, string> metadata = 4;
+  repeated AssignedShardState assigned_shards = 5;
+}
+
+message AssignedShardState {
+  string shard_key = 1;
+  AssignmentStatus assignment_status = 2;
+  // Mod revision of the executor's assigned_state etcd key when this snapshot was read.
+  int64 assigned_state_mod_revision = 3;
 }
 
 message WatchNamespaceStateRequest {
