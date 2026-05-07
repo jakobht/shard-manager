@@ -201,7 +201,42 @@ func (h *handlerImpl) GetNamespaceState(ctx context.Context, request *types.GetN
 		}
 	}
 
-	return nil, &types.InternalServiceError{Message: "GetNamespaceState is not implemented yet"}
+	state, err := h.storage.GetState(ctx, request.GetNamespace())
+	if err != nil {
+		return nil, &types.InternalServiceError{Message: fmt.Sprintf("failed to get namespace state: %v", err)}
+	}
+
+	executors := make([]*types.NamespaceExecutorState, 0, len(state.Executors))
+
+	for executorID, heartbeat := range state.Executors {
+		assignedState := state.ShardAssignments[executorID]
+
+		assignedShards := make([]*types.ExecutorAssignedShardState, 0, len(assignedState.AssignedShards))
+		for shardKey, shardAssignment := range assignedState.AssignedShards {
+			status := types.AssignmentStatusINVALID
+			if shardAssignment != nil {
+				status = shardAssignment.Status
+			}
+			assignedShards = append(assignedShards, &types.ExecutorAssignedShardState{
+				ShardKey:                 shardKey,
+				AssignmentStatus:         status,
+				AssignedStateModRevision: assignedState.ModRevision,
+			})
+		}
+
+		executors = append(executors, &types.NamespaceExecutorState{
+			ExecutorID:     executorID,
+			Status:         heartbeat.Status,
+			LastHeartbeat:  heartbeat.LastHeartbeat,
+			Metadata:       heartbeat.Metadata,
+			AssignedShards: assignedShards,
+		})
+	}
+
+	return &types.GetNamespaceStateResponse{
+		Namespace: request.GetNamespace(),
+		Executors: executors,
+	}, nil
 }
 
 func (h *handlerImpl) WatchNamespaceState(request *types.WatchNamespaceStateRequest, server WatchNamespaceStateServer) error {
