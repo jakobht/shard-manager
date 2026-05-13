@@ -270,6 +270,25 @@ func (h *handlerImpl) GetNamespaceState(ctx context.Context, request *types.GetN
 	}, nil
 }
 
+// ListNamespaces returns the static namespace configuration loaded from the
+// server's shardDistribution.namespaces YAML at startup.
+func (h *handlerImpl) ListNamespaces(_ context.Context, _ *types.ListNamespacesRequest) (resp *types.ListNamespacesResponse, retError error) {
+	defer func() { log.CapturePanic(recover(), h.logger, &retError) }()
+
+	h.startWG.Wait()
+
+	namespaces := make([]*types.NamespaceConfig, 0, len(h.shardDistributionCfg.Namespaces))
+	for _, ns := range h.shardDistributionCfg.Namespaces {
+		namespaces = append(namespaces, &types.NamespaceConfig{
+			Name:     ns.Name,
+			Type:     ns.Type,
+			Mode:     ns.Mode,
+			ShardNum: ns.ShardNum,
+		})
+	}
+	return &types.ListNamespacesResponse{Namespaces: namespaces}, nil
+}
+
 func (h *handlerImpl) WatchNamespaceState(request *types.WatchNamespaceStateRequest, server WatchNamespaceStateServer) error {
 	h.startWG.Wait()
 

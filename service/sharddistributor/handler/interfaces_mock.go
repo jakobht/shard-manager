@@ -102,6 +102,21 @@ func (mr *MockHandlerMockRecorder) InspectShard(arg0, arg1 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InspectShard", reflect.TypeOf((*MockHandler)(nil).InspectShard), arg0, arg1)
 }
 
+// ListNamespaces mocks base method.
+func (m *MockHandler) ListNamespaces(arg0 context.Context, arg1 *types.ListNamespacesRequest) (*types.ListNamespacesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNamespaces", arg0, arg1)
+	ret0, _ := ret[0].(*types.ListNamespacesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNamespaces indicates an expected call of ListNamespaces.
+func (mr *MockHandlerMockRecorder) ListNamespaces(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNamespaces", reflect.TypeOf((*MockHandler)(nil).ListNamespaces), arg0, arg1)
+}
+
 // Start mocks base method.
 func (m *MockHandler) Start() {
 	m.ctrl.T.Helper()

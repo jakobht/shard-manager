@@ -539,3 +539,77 @@ func ToShardDistributorGetNamespaceStateResponse(t *sharddistributorv1.GetNamesp
 		Executors: executors,
 	}
 }
+
+// FromShardDistributorListNamespacesRequest converts a types.ListNamespacesRequest to a sharddistributor ListNamespacesRequest.
+func FromShardDistributorListNamespacesRequest(t *types.ListNamespacesRequest) *sharddistributorv1.ListNamespacesRequest {
+	if t == nil {
+		return nil
+	}
+	return &sharddistributorv1.ListNamespacesRequest{}
+}
+
+// ToShardDistributorListNamespacesRequest converts a sharddistributor ListNamespacesRequest to a types.ListNamespacesRequest.
+func ToShardDistributorListNamespacesRequest(t *sharddistributorv1.ListNamespacesRequest) *types.ListNamespacesRequest {
+	if t == nil {
+		return nil
+	}
+	return &types.ListNamespacesRequest{}
+}
+
+// FromShardDistributorListNamespacesResponse converts a types.ListNamespacesResponse to a sharddistributor ListNamespacesResponse.
+func FromShardDistributorListNamespacesResponse(t *types.ListNamespacesResponse) *sharddistributorv1.ListNamespacesResponse {
+	if t == nil {
+		return nil
+	}
+	var namespaces []*sharddistributorv1.NamespaceConfig
+	if t.GetNamespaces() != nil {
+		namespaces = make([]*sharddistributorv1.NamespaceConfig, 0, len(t.GetNamespaces()))
+		for _, ns := range t.GetNamespaces() {
+			namespaces = append(namespaces, fromShardDistributorNamespaceConfig(ns))
+		}
+	}
+	return &sharddistributorv1.ListNamespacesResponse{
+		Namespaces: namespaces,
+	}
+}
+
+// ToShardDistributorListNamespacesResponse converts a sharddistributor ListNamespacesResponse to a types.ListNamespacesResponse.
+func ToShardDistributorListNamespacesResponse(t *sharddistributorv1.ListNamespacesResponse) *types.ListNamespacesResponse {
+	if t == nil {
+		return nil
+	}
+	var namespaces []*types.NamespaceConfig
+	if t.GetNamespaces() != nil {
+		namespaces = make([]*types.NamespaceConfig, 0, len(t.GetNamespaces()))
+		for _, ns := range t.GetNamespaces() {
+			namespaces = append(namespaces, toShardDistributorNamespaceConfig(ns))
+		}
+	}
+	return &types.ListNamespacesResponse{
+		Namespaces: namespaces,
+	}
+}
+
+func fromShardDistributorNamespaceConfig(t *types.NamespaceConfig) *sharddistributorv1.NamespaceConfig {
+	if t == nil {
+		return nil
+	}
+	return &sharddistributorv1.NamespaceConfig{
+		Name:     t.GetName(),
+		Type:     t.GetType(),
+		Mode:     t.GetMode(),
+		ShardNum: t.GetShardNum(),
+	}
+}
+
+func toShardDistributorNamespaceConfig(t *sharddistributorv1.NamespaceConfig) *types.NamespaceConfig {
+	if t == nil {
+		return nil
+	}
+	return &types.NamespaceConfig{
+		Name:     t.GetName(),
+		Type:     t.GetType(),
+		Mode:     t.GetMode(),
+		ShardNum: t.GetShardNum(),
+	}
+}

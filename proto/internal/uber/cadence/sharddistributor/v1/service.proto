@@ -43,6 +43,10 @@ service ShardDistributorAPI {
 
   // WatchNamespaceState streams updates about executors and their assigned shards for a namespace
   rpc WatchNamespaceState(WatchNamespaceStateRequest) returns (stream WatchNamespaceStateResponse);
+
+  // ListNamespaces returns the static namespace configuration of the shard-manager fleet.
+  // This reflects the server's loaded shardDistribution.namespaces config
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse);
 }
 
 message GetShardOwnerRequest {
@@ -117,4 +121,23 @@ message ExecutorInfo {
 
 message Shard {
   string shard_key = 1;
+}
+
+message ListNamespacesRequest {}
+
+message ListNamespacesResponse {
+  repeated NamespaceConfig namespaces = 1;
+}
+
+// NamespaceConfig is the operator-visible static configuration for a namespace,
+// loaded from the server's shardDistribution.namespaces YAML config at startup.
+message NamespaceConfig {
+  // Name is the namespace identifier
+  string name = 1;
+  // Type is "fixed" or "ephemeral".
+  string type = 2;
+  // Mode is the migration mode (e.g. "onboarded", "local_pass", "distributed_pass").
+  string mode = 3;
+  // ShardNum is the configured number of shards. Only for type="fixed".
+  int64 shard_num = 4;
 }

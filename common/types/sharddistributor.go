@@ -175,6 +175,65 @@ func (v *ExecutorAssignedShardState) GetAssignedStateModRevision() (o int64) {
 	return
 }
 
+type ListNamespacesRequest struct{}
+
+// GetNamespace satisfies the metered-wrapper template which tags every scope
+// with metrics.NamespaceTag. ListNamespaces is fleet-wide so this is always "".
+func (v *ListNamespacesRequest) GetNamespace() string {
+	return ""
+}
+
+type ListNamespacesResponse struct {
+	Namespaces []*NamespaceConfig
+}
+
+func (v *ListNamespacesResponse) GetNamespaces() (o []*NamespaceConfig) {
+	if v != nil {
+		return v.Namespaces
+	}
+	return
+}
+
+// NamespaceConfig is the operator-visible static configuration of a namespace,
+// loaded from the server's shardDistribution.namespaces YAML config at startup.
+type NamespaceConfig struct {
+	Name string
+	// Type is "fixed" or "ephemeral".
+	Type string
+	// Mode is the migration mode (e.g. "onboarded", "local_pass", "distributed_pass").
+	Mode string
+	// ShardNum is the configured number of shards. Only for Type=="fixed".
+	ShardNum int64
+}
+
+func (v *NamespaceConfig) GetName() (o string) {
+	if v != nil {
+		return v.Name
+	}
+	return
+}
+
+func (v *NamespaceConfig) GetType() (o string) {
+	if v != nil {
+		return v.Type
+	}
+	return
+}
+
+func (v *NamespaceConfig) GetMode() (o string) {
+	if v != nil {
+		return v.Mode
+	}
+	return
+}
+
+func (v *NamespaceConfig) GetShardNum() (o int64) {
+	if v != nil {
+		return v.ShardNum
+	}
+	return
+}
+
 type NamespaceNotFoundError struct {
 	Namespace string
 }

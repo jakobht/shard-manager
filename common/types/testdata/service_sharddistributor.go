@@ -101,4 +101,20 @@ var (
 			},
 		},
 	}
+	ShardDistributorListNamespacesRequest  = types.ListNamespacesRequest{}
+	ShardDistributorListNamespacesResponse = types.ListNamespacesResponse{
+		Namespaces: []*types.NamespaceConfig{
+			{
+				Name:     "shard-distributor-canary",
+				Type:     "fixed",
+				Mode:     "onboarded",
+				ShardNum: 32,
+			},
+			{
+				Name: "test-external-assignment",
+				Type: "ephemeral",
+				Mode: "distributed_pass",
+			},
+		},
+	}
 )

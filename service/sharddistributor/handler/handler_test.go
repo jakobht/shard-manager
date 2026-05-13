@@ -578,3 +578,56 @@ func TestGetNamespaceState_heartbeatWithoutAssignments(t *testing.T) {
 	require.Equal(t, now, ex.LastHeartbeat)
 	require.Empty(t, ex.AssignedShards)
 }
+
+func TestListNamespaces(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.ShardDistribution
+		want []*types.NamespaceConfig
+	}{
+		{
+			name: "empty config returns empty slice (not nil)",
+			cfg:  config.ShardDistribution{},
+			want: []*types.NamespaceConfig{},
+		},
+		{
+			name: "single fixed namespace",
+			cfg: config.ShardDistribution{
+				Namespaces: []config.Namespace{
+					{Name: "ns-fixed", Type: config.NamespaceTypeFixed, Mode: "onboarded", ShardNum: 32},
+				},
+			},
+			want: []*types.NamespaceConfig{
+				{Name: "ns-fixed", Type: "fixed", Mode: "onboarded", ShardNum: 32},
+			},
+		},
+		{
+			name: "preserves order and surfaces both fixed and ephemeral",
+			cfg: config.ShardDistribution{
+				Namespaces: []config.Namespace{
+					{Name: "first", Type: config.NamespaceTypeFixed, Mode: "onboarded", ShardNum: 8},
+					{Name: "second", Type: config.NamespaceTypeEphemeral, Mode: "distributed_pass"},
+					{Name: "third", Type: config.NamespaceTypeFixed, Mode: "local_pass", ShardNum: 16},
+				},
+			},
+			want: []*types.NamespaceConfig{
+				{Name: "first", Type: "fixed", Mode: "onboarded", ShardNum: 8},
+				{Name: "second", Type: "ephemeral", Mode: "distributed_pass"},
+				{Name: "third", Type: "fixed", Mode: "local_pass", ShardNum: 16},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockStorage := store.NewMockStore(ctrl) // ListNamespaces does not call storage.
+
+			h := newTestHandler(t, tt.cfg, mockStorage)
+			resp, err := h.ListNamespaces(context.Background(), &types.ListNamespacesRequest{})
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.Equal(t, tt.want, resp.Namespaces)
+		})
+	}
+}

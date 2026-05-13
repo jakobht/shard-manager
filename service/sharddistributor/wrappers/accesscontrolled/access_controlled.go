@@ -70,6 +70,13 @@ func (a *accessControlledHandler) GetNamespaceState(ctx context.Context, req *ty
 	return a.Handler.GetNamespaceState(ctx, req)
 }
 
+func (a *accessControlledHandler) ListNamespaces(ctx context.Context, req *types.ListNamespacesRequest) (*types.ListNamespacesResponse, error) {
+	if err := a.authorize(ctx, "ListNamespaces", "", authorization.PermissionAdmin); err != nil {
+		return nil, err
+	}
+	return a.Handler.ListNamespaces(ctx, req)
+}
+
 func (a *accessControlledHandler) authorize(ctx context.Context, apiName, namespace string, permission authorization.Permission) error {
 	result, err := a.authorizer.Authorize(ctx, &authorization.Attributes{
 		APIName:    apiName,

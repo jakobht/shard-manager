@@ -93,6 +93,18 @@ func TestFromShardDistributorGetNamespaceStateResponse(t *testing.T) {
 	}
 }
 
+func TestFromShardDistributorListNamespacesRequest(t *testing.T) {
+	for _, item := range []*types.ListNamespacesRequest{nil, {}, &testdata.ShardDistributorListNamespacesRequest} {
+		assert.Equal(t, item, ToShardDistributorListNamespacesRequest(FromShardDistributorListNamespacesRequest(item)))
+	}
+}
+
+func TestFromShardDistributorListNamespacesResponse(t *testing.T) {
+	for _, item := range []*types.ListNamespacesResponse{nil, {}, &testdata.ShardDistributorListNamespacesResponse} {
+		assert.Equal(t, item, ToShardDistributorListNamespacesResponse(FromShardDistributorListNamespacesResponse(item)))
+	}
+}
+
 // --- Fuzz tests for sharddistributor mapper functions ---
 
 // ExecutorStatusFuzzer generates valid ExecutorStatus enum values (0-3: INVALID, ACTIVE, DRAINING, DRAINED).
@@ -233,5 +245,27 @@ func TestExecutorHeartbeatRequestFuzz(t *testing.T) {
 func TestExecutorHeartbeatResponseFuzz(t *testing.T) {
 	testutils.RunMapperFuzzTest(t, FromShardDistributorExecutorHeartbeatResponse, ToShardDistributorExecutorHeartbeatResponse,
 		testutils.WithCustomFuncs(AssignmentStatusFuzzer, MigrationModeFuzzer, ExecutorHeartbeatResponseFuzzer),
+	)
+}
+
+func TestListNamespacesRequestFuzz(t *testing.T) {
+	testutils.RunMapperFuzzTest(t, FromShardDistributorListNamespacesRequest, ToShardDistributorListNamespacesRequest)
+}
+
+// ListNamespacesResponseFuzzer normalizes nil slice elements to zero-value structs.
+// protobuf repeated fields don't distinguish nil from empty for inner pointers, so
+// nil entries round-trip to non-nil &NamespaceConfig{} via the per-element mapper.
+func ListNamespacesResponseFuzzer(r *types.ListNamespacesResponse, c fuzz.Continue) {
+	c.FuzzNoCustom(r)
+	for i, ns := range r.Namespaces {
+		if ns == nil {
+			r.Namespaces[i] = &types.NamespaceConfig{}
+		}
+	}
+}
+
+func TestListNamespacesResponseFuzz(t *testing.T) {
+	testutils.RunMapperFuzzTest(t, FromShardDistributorListNamespacesResponse, ToShardDistributorListNamespacesResponse,
+		testutils.WithCustomFuncs(ListNamespacesResponseFuzzer),
 	)
 }
