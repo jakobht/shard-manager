@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/loadbalancer"
@@ -58,7 +59,7 @@ func (h *handlerImpl) assignEphemeralBatch(ctx context.Context, namespace string
 		return nil, &types.InternalServiceError{Message: fmt.Sprintf("plan initial placement: %v", err)}
 	}
 
-	mergePlacements(state, placements)
+	mergePlacements(state, placements, h.timeSource.Now().UTC())
 
 	if err := h.storage.AssignShards(ctx, namespace, store.AssignShardsRequest{NewState: state}, store.NopGuard()); err != nil {
 		if errors.Is(err, store.ErrVersionConflict) {
@@ -80,7 +81,7 @@ func (h *handlerImpl) assignEphemeralBatch(ctx context.Context, namespace string
 // mergePlacements folds the planned shard→executor placements back into state.
 // The AssignedShards maps are copied to avoid mutating the object returned by
 // GetState.
-func mergePlacements(state *store.NamespaceState, placements []plan.Placement) {
+func mergePlacements(state *store.NamespaceState, placements []plan.Placement, now time.Time) {
 	if state.ShardAssignments == nil {
 		state.ShardAssignments = make(map[string]store.AssignedState)
 	}
@@ -94,6 +95,7 @@ func mergePlacements(state *store.NamespaceState, placements []plan.Placement) {
 			newShards[shardKey] = &types.ShardAssignment{Status: types.AssignmentStatusREADY}
 		}
 		existing.AssignedShards = newShards
+		existing.LastUpdated = now
 		state.ShardAssignments[executorID] = existing
 	}
 }

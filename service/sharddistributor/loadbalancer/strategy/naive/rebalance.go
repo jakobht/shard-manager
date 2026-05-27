@@ -76,6 +76,10 @@ func PlanRebalance(
 		return nil, nil
 	}
 
+	var loadRatio float64
+	if coldestExecutorLoad > 0 {
+		loadRatio = hottestExecutorLoad / coldestExecutorLoad
+	}
 	logger.Info("Load-based shard move",
 		tag.ShardKey(hottestShardID),
 		tag.ShardExecutor(hottestExecutorID),
@@ -83,7 +87,7 @@ func PlanRebalance(
 		tag.ShardLoad(fmt.Sprintf("%f", hottestShardLoad)),
 		tag.Dynamic("hottest_executor_load", hottestExecutorLoad),
 		tag.Dynamic("coldest_executor_load", coldestExecutorLoad),
-		tag.Dynamic("load_ratio", hottestExecutorLoad/coldestExecutorLoad),
+		tag.Dynamic("load_ratio", loadRatio),
 		tag.Dynamic("hottest_executor_shard_count", len(currentAssignments[hottestExecutorID])),
 		tag.Dynamic("coldest_executor_shard_count", len(currentAssignments[coldestExecutorID])),
 	)
