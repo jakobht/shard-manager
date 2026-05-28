@@ -38,7 +38,7 @@ import (
 )
 
 // Per-balancer placement logic (naive count, greedy smoothed-load, tiebreaks,
-// draining/no-active handling) is covered in the loadbalance package tests.
+// draining/no-active handling) is covered in the loadbalancer package tests.
 // These tests cover only handler-level concerns: storage orchestration, error
 // wrapping, and the happy-path response shape.
 func TestAssignEphemeralBatch(t *testing.T) {
@@ -116,8 +116,6 @@ func TestAssignEphemeralBatch(t *testing.T) {
 			expectedErrMsg: "assign shards failure",
 		},
 		{
-			// The balancer's ErrNoActiveExecutors sentinel is translated to an
-			// InternalServiceError with a namespace-specific message in the handler.
 			name:      "NoActiveExecutors",
 			shardKeys: []string{"NON-EXISTING-SHARD"},
 			setupMocks: func(mockStore *store.MockStore) {
@@ -126,7 +124,7 @@ func TestAssignEphemeralBatch(t *testing.T) {
 				}, nil)
 			},
 			expectedError:  true,
-			expectedErrMsg: "no active executors available for namespace",
+			expectedErrMsg: "plan initial placement: no active executors available",
 		},
 	}
 
@@ -162,7 +160,7 @@ func TestAssignEphemeralBatch(t *testing.T) {
 	}
 }
 
-// An unsupported load balancing mode bubbles up from loadbalance.New as an
+// An unsupported load balancing mode bubbles up from the loadbalancer planner as an
 // InternalServiceError; the handler wraps it rather than panicking.
 func TestAssignEphemeralBatch_InvalidLoadBalancingMode(t *testing.T) {
 	ctrl := gomock.NewController(t)
