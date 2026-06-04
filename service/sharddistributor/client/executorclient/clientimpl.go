@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/client/sharddistributorexecutor"
 	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
-	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
+	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon/tag"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/executorclient/metricsconstants"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/executorclient/syncgeneric"
 )
@@ -90,7 +90,7 @@ func newManagedProcessor[SP ShardProcessor](processor SP, state processorState) 
 }
 
 type executorImpl[SP ShardProcessor] struct {
-	logger                 log.Logger
+	logger                 *zap.Logger
 	shardDistributorClient sharddistributorexecutor.Client
 	shardProcessorFactory  ShardProcessorFactory[SP]
 	namespace              string
@@ -119,7 +119,7 @@ func (e *executorImpl[SP]) getMigrationMode() types.MigrationMode {
 }
 
 func (e *executorImpl[SP]) Start(ctx context.Context) {
-	e.logger.Info("starting shard distributor executor", tag.ShardNamespace(e.namespace))
+	e.logger.Info("starting shard distributor executor", zap.String(tag.Namespace, e.namespace))
 	e.processLoopWG.Add(2)
 	go func() {
 		defer e.processLoopWG.Done()
@@ -132,7 +132,7 @@ func (e *executorImpl[SP]) Start(ctx context.Context) {
 }
 
 func (e *executorImpl[SP]) Stop() {
-	e.logger.Info("stopping shard distributor executor", tag.ShardNamespace(e.namespace))
+	e.logger.Info("stopping shard distributor executor", zap.String(tag.Namespace, e.namespace))
 	close(e.stopC)
 	e.processLoopWG.Wait()
 }
@@ -249,7 +249,7 @@ func (e *executorImpl[SP]) heartbeatloop(ctx context.Context) {
 				return
 			}
 			if err != nil {
-				e.logger.Error("failed to heartbeat and assign shards", tag.Error(err))
+				e.logger.Error("failed to heartbeat and assign shards", zap.Error(err))
 				continue
 			}
 		}
@@ -311,7 +311,7 @@ func (e *executorImpl[SP]) heartbeatAndHandleMigrationMode(ctx context.Context) 
 
 	default:
 		e.logger.Warn("unknown migration mode, skipping assignment",
-			tag.ShardNamespace(e.namespace), tag.Dynamic("migration-mode", migrationMode))
+			zap.String(tag.Namespace, e.namespace), zap.Any(tag.MigrationMode, migrationMode))
 		return nil, nil
 	}
 }
@@ -365,10 +365,10 @@ func (e *executorImpl[SP]) sendHeartbeat(ctx context.Context, status types.Execu
 	currentMode := response.MigrationMode
 	if previousMode != currentMode {
 		e.logger.Info("migration mode transition",
-			tag.Dynamic("previous", previousMode),
-			tag.Dynamic("current", currentMode),
-			tag.ShardNamespace(e.namespace),
-			tag.ShardExecutor(e.executorID))
+			zap.Any("previous", previousMode),
+			zap.Any("current", currentMode),
+			zap.String(tag.Namespace, e.namespace),
+			zap.String(tag.Executor, e.executorID))
 		e.setMigrationMode(currentMode)
 	}
 
@@ -381,7 +381,7 @@ func (e *executorImpl[SP]) sendDrainingHeartbeat() {
 
 	_, _, err := e.sendHeartbeat(ctx, types.ExecutorStatusDRAINING)
 	if err != nil {
-		e.logger.Error("failed to send draining heartbeat", tag.Error(err))
+		e.logger.Error("failed to send draining heartbeat", zap.Error(err))
 	}
 }
 
@@ -443,7 +443,7 @@ func (e *executorImpl[SP]) addManagerProcessor(ctx context.Context, shardID stri
 		// READY once the entry is gone and addManagerProcessor will create a fresh one.
 		if existing.getState() == processorStateStopping {
 			e.logger.Info("shard processor add skipped: existing processor is still stopping, will retry on next heartbeat",
-				tag.ShardKey(shardID))
+				zap.String(tag.ShardKey, shardID))
 		}
 		return
 	}
@@ -451,7 +451,7 @@ func (e *executorImpl[SP]) addManagerProcessor(ctx context.Context, shardID stri
 	e.metrics.Counter(metricsconstants.ShardDistributorExecutorShardsStarted).Inc(1)
 	processor, err := e.shardProcessorFactory.NewShardProcessor(shardID)
 	if err != nil {
-		e.logger.Error("failed to create shard processor", tag.Error(err))
+		e.logger.Error("failed to create shard processor", zap.Error(err))
 		e.metrics.Counter(metricsconstants.ShardDistributorExecutorProcessorCreationFailures).Inc(1)
 		return
 	}
@@ -465,7 +465,7 @@ func (e *executorImpl[SP]) addManagerProcessor(ctx context.Context, shardID stri
 	go func() {
 		defer close(done)
 		if err := processor.Start(context.WithoutCancel(ctx)); err != nil {
-			e.logger.Error("shard processor start failed", tag.ShardKey(shardID), tag.Error(err))
+			e.logger.Error("shard processor start failed", zap.String(tag.ShardKey, shardID), zap.Error(err))
 			// Remove the failed processor so the next heartbeat can retry.
 			e.managedProcessors.Delete(shardID)
 			return
@@ -478,7 +478,7 @@ func (e *executorImpl[SP]) addManagerProcessor(ctx context.Context, shardID stri
 		select {
 		case <-done:
 		case <-timer.Chan():
-			e.logger.Error("shard processor start timed out", tag.ShardKey(shardID))
+			e.logger.Error("shard processor start timed out", zap.String(tag.ShardKey, shardID))
 			e.metrics.Counter(metricsconstants.ShardDistributorExecutorProcessorStartTimeout).Inc(1)
 		}
 	}()
@@ -511,7 +511,7 @@ func (e *executorImpl[SP]) stopManagerProcessor(shardID string) <-chan struct{} 
 		select {
 		case <-done:
 		case <-timer.Chan():
-			e.logger.Error("shard processor stop timed out", tag.ShardKey(shardID))
+			e.logger.Error("shard processor stop timed out", zap.String(tag.ShardKey, shardID))
 			e.metrics.Counter(metricsconstants.ShardDistributorExecutorProcessorStopTimeout).Inc(1)
 		}
 	}()
@@ -521,10 +521,10 @@ func (e *executorImpl[SP]) stopManagerProcessor(shardID string) <-chan struct{} 
 func (e *executorImpl[SP]) shardCleanUpLoop(ctx context.Context) {
 	// We don't run the loop for invalid durations
 	if e.ttlShard <= 0 {
-		e.logger.Info("cleanUpLoop not configured", tag.Dynamic("ttlShard", e.ttlShard))
+		e.logger.Info("cleanUpLoop not configured", zap.Any(tag.TTLShard, e.ttlShard))
 		return
 	}
-	e.logger.Info("cleanUpLoop configured", tag.Dynamic("ttlShard", e.ttlShard))
+	e.logger.Info("cleanUpLoop configured", zap.Any(tag.TTLShard, e.ttlShard))
 	shardCleanUpTimer := e.timeSource.NewTimer(backoff.JitDuration(e.ttlShard, heartbeatJitterCoeff))
 	defer shardCleanUpTimer.Stop()
 
@@ -543,8 +543,8 @@ func (e *executorImpl[SP]) shardCleanUpLoop(ctx context.Context) {
 					mp, ok := e.managedProcessors.Load(shardID)
 					if ok {
 						e.logger.Info("shard cleanup: marking shard as done (idle past TTL)",
-							tag.ShardKey(shardID),
-							tag.Dynamic("idle_duration", e.timeSource.Since(lastUse).String()),
+							zap.String(tag.ShardKey, shardID),
+							zap.Any(tag.IdleDuration, e.timeSource.Since(lastUse).String()),
 						)
 						mp.processor.SetShardStatus(types.ShardStatusDONE)
 						e.metrics.Counter(metricsconstants.ShardDistributorExecutorShardsCleanedUpDone).Inc(1)

@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/client/sharddistributor"
 	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
-	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
+	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon/tag"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/spectatorclient/metricsconstants"
 	csync "github.com/cadence-workflow/shard-manager/service/sharddistributor/client/spectatorclient/sync"
 )
@@ -42,7 +42,7 @@ type spectatorImpl struct {
 	config     clientcommon.NamespaceConfig
 	client     sharddistributor.Client
 	scope      tally.Scope
-	logger     log.Logger
+	logger     *zap.Logger
 	timeSource clock.TimeSource
 
 	cancel context.CancelFunc
@@ -82,8 +82,8 @@ func (s *spectatorImpl) Stop() {
 }
 
 func (s *spectatorImpl) watchLoop(ctx context.Context) {
-	defer s.logger.Info("Shutting down, stopping watch loop", tag.ShardNamespace(s.namespace))
-	s.logger.Info("Starting watch loop for namespace", tag.ShardNamespace(s.namespace))
+	defer s.logger.Info("Shutting down, stopping watch loop", zap.String(tag.Namespace, s.namespace))
+	s.logger.Info("Starting watch loop for namespace", zap.String(tag.Namespace, s.namespace))
 
 	var state stateFn
 	if s.enabled() {
@@ -98,8 +98,8 @@ func (s *spectatorImpl) watchLoop(ctx context.Context) {
 }
 
 func (s *spectatorImpl) connectState(ctx context.Context) stateFn {
-	defer s.logger.Info("Exiting connect state", tag.ShardNamespace(s.namespace))
-	s.logger.Info("Starting connect state for namespace", tag.ShardNamespace(s.namespace))
+	defer s.logger.Info("Exiting connect state", zap.String(tag.Namespace, s.namespace))
+	s.logger.Info("Starting connect state for namespace", zap.String(tag.Namespace, s.namespace))
 
 	if !s.enabled() {
 		return s.disabledState
@@ -111,7 +111,7 @@ func (s *spectatorImpl) connectState(ctx context.Context) stateFn {
 			return nil
 		}
 
-		s.logger.Error("Failed to create stream, retrying", tag.Error(err), tag.ShardNamespace(s.namespace))
+		s.logger.Error("Failed to create stream, retrying", zap.Error(err), zap.String(tag.Namespace, s.namespace))
 		if err := s.timeSource.SleepWithContext(ctx, backoff.JitDuration(streamRetryInterval, streamRetryJitterCoeff)); err != nil {
 			return nil
 		}
@@ -124,10 +124,10 @@ func (s *spectatorImpl) connectState(ctx context.Context) stateFn {
 }
 
 func (s *spectatorImpl) enabledState(ctx context.Context) stateFn {
-	defer s.logger.Info("Exiting enabled state", tag.ShardNamespace(s.namespace))
+	defer s.logger.Info("Exiting enabled state", zap.String(tag.Namespace, s.namespace))
 	defer s.stream.Close()
 
-	s.logger.Info("Starting enabled state for namespace", tag.ShardNamespace(s.namespace))
+	s.logger.Info("Starting enabled state for namespace", zap.String(tag.Namespace, s.namespace))
 
 	for {
 		if !s.enabled() {
@@ -137,7 +137,7 @@ func (s *spectatorImpl) enabledState(ctx context.Context) stateFn {
 		response, err := s.stream.Recv()
 		if err != nil {
 			if ctx.Err() != nil {
-				s.logger.Info("Recv interrupted by client shutdown", tag.ShardNamespace(s.namespace))
+				s.logger.Info("Recv interrupted by client shutdown", zap.String(tag.Namespace, s.namespace))
 				return nil
 			}
 
@@ -145,7 +145,7 @@ func (s *spectatorImpl) enabledState(ctx context.Context) stateFn {
 				s.streamReconnectCounter(metricsconstants.StreamReconnectReasonTimeout).Inc(1)
 			} else {
 				s.streamReconnectCounter(metricsconstants.StreamReconnectReasonError).Inc(1)
-				s.logger.Warn("Stream recv error, will reconnect", tag.Error(err), tag.ShardNamespace(s.namespace))
+				s.logger.Warn("Stream recv error, will reconnect", zap.Error(err), zap.String(tag.Namespace, s.namespace))
 			}
 
 			if err := s.timeSource.SleepWithContext(ctx, backoff.JitDuration(streamRetryInterval, streamRetryJitterCoeff)); err != nil {
@@ -166,8 +166,8 @@ func (s *spectatorImpl) disabledState(ctx context.Context) stateFn {
 		// nobody will close, causing Wait() callers to block forever
 		return nil
 	}
-	defer s.logger.Info("Exiting disabled state", tag.ShardNamespace(s.namespace))
-	s.logger.Info("Starting disabled state for namespace", tag.ShardNamespace(s.namespace))
+	defer s.logger.Info("Exiting disabled state", zap.String(tag.Namespace, s.namespace))
+	s.logger.Info("Starting disabled state for namespace", zap.String(tag.Namespace, s.namespace))
 	// We reset the first state signal to ensure we wait for the first state to be received when we re-enable.
 	s.firstStateSignal.Reset()
 
@@ -205,8 +205,8 @@ func (s *spectatorImpl) handleResponse(response *types.WatchNamespaceStateRespon
 	s.firstStateSignal.Done()
 
 	s.logger.Debug("Received namespace state update",
-		tag.ShardNamespace(s.namespace),
-		tag.Counter(len(response.Executors)))
+		zap.String(tag.Namespace, s.namespace),
+		zap.Int(tag.Count, len(response.Executors)))
 }
 
 // GetShardOwner returns the full owner information including metadata for a given shard.
@@ -229,8 +229,8 @@ func (s *spectatorImpl) GetShardOwner(ctx context.Context, shardKey string) (*Sh
 
 	// Cache miss - fall back to RPC call
 	s.logger.Debug("Shard not found in cache, querying shard distributor",
-		tag.ShardKey(shardKey),
-		tag.ShardNamespace(s.namespace))
+		zap.String(tag.ShardKey, shardKey),
+		zap.String(tag.Namespace, s.namespace))
 
 	response, err := s.client.GetShardOwner(ctx, &types.GetShardOwnerRequest{
 		Namespace: s.namespace,

@@ -11,11 +11,11 @@ import (
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/peer/hostport"
 	"go.uber.org/yarpc/yarpcerrors"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
-	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
+	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon/tag"
 )
 
 const (
@@ -47,7 +47,7 @@ type SpectatorPeerChooserInterface interface {
 type SpectatorPeerChooser struct {
 	spectators *Spectators
 	transport  peer.Transport
-	logger     log.Logger
+	logger     *zap.Logger
 	namespace  string
 
 	peersMutex sync.RWMutex
@@ -61,7 +61,7 @@ type SpectatorPeerChooser struct {
 type SpectatorPeerChooserParams struct {
 	fx.In
 	Transport  peer.Transport
-	Logger     log.Logger
+	Logger     *zap.Logger
 	Config     clientcommon.Config
 	TimeSource clock.TimeSource
 }
@@ -81,14 +81,14 @@ func NewSpectatorPeerChooser(
 
 // Start satisfies the peer.Chooser interface
 func (c *SpectatorPeerChooser) Start() error {
-	c.logger.Info("Starting shard distributor peer chooser", tag.ShardNamespace(c.namespace))
+	c.logger.Info("Starting shard distributor peer chooser", zap.String(tag.Namespace, c.namespace))
 	c.startEvictionLoop()
 	return nil
 }
 
 // Stop satisfies the peer.Chooser interface
 func (c *SpectatorPeerChooser) Stop() error {
-	c.logger.Info("Stopping shard distributor peer chooser", tag.ShardNamespace(c.namespace))
+	c.logger.Info("Stopping shard distributor peer chooser", zap.String(tag.Namespace, c.namespace))
 
 	if c.stopCh != nil {
 		close(c.stopCh)
@@ -101,7 +101,7 @@ func (c *SpectatorPeerChooser) Stop() error {
 
 	for addr, tp := range c.peers {
 		if err := c.transport.ReleasePeer(tp.peer, &noOpSubscriber{}); err != nil {
-			c.logger.Error("Failed to release peer", tag.Error(err), tag.Address(addr))
+			c.logger.Error("Failed to release peer", zap.Error(err), zap.String(tag.Address, addr))
 		}
 	}
 	c.peers = make(map[string]*trackedPeer)
@@ -194,7 +194,7 @@ func (c *SpectatorPeerChooser) evictStalePeers() {
 	for addr, tp := range c.peers {
 		if now.Sub(tp.lastUsed) > c.peerTTL {
 			if err := c.transport.ReleasePeer(tp.peer, &noOpSubscriber{}); err != nil {
-				c.logger.Error("Failed to release stale peer", tag.Error(err), tag.Address(addr))
+				c.logger.Error("Failed to release stale peer", zap.Error(err), zap.String(tag.Address, addr))
 			}
 			delete(c.peers, addr)
 		}

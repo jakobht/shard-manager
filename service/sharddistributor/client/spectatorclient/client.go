@@ -6,10 +6,10 @@ import (
 
 	"github.com/uber-go/tally"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/client/sharddistributor"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
 	csync "github.com/cadence-workflow/shard-manager/service/sharddistributor/client/spectatorclient/sync"
 )
@@ -73,7 +73,7 @@ type Params struct {
 
 	Client       sharddistributor.Client
 	MetricsScope tally.Scope
-	Logger       log.Logger
+	Logger       *zap.Logger
 	Config       clientcommon.Config
 	TimeSource   clock.TimeSource
 
