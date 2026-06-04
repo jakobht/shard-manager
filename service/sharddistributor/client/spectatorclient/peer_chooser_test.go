@@ -11,15 +11,15 @@ import (
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/peer/hostport"
 	"go.uber.org/yarpc/transport/grpc"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log/testlogger"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
 )
 
 func TestSpectatorPeerChooser_Choose_MissingShardKey(t *testing.T) {
 	chooser := &SpectatorPeerChooser{
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 	}
@@ -39,7 +39,7 @@ func TestSpectatorPeerChooser_Choose_MissingShardKey(t *testing.T) {
 
 func TestSpectatorPeerChooser_Choose_MissingNamespaceHeader(t *testing.T) {
 	chooser := &SpectatorPeerChooser{
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 	}
@@ -59,7 +59,7 @@ func TestSpectatorPeerChooser_Choose_MissingNamespaceHeader(t *testing.T) {
 
 func TestSpectatorPeerChooser_Choose_SpectatorNotFound(t *testing.T) {
 	chooser := &SpectatorPeerChooser{
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 		spectators: &Spectators{spectators: make(map[string]Spectator)},
@@ -80,7 +80,7 @@ func TestSpectatorPeerChooser_Choose_SpectatorNotFound(t *testing.T) {
 
 func TestSpectatorPeerChooser_StartStop(t *testing.T) {
 	chooser := &SpectatorPeerChooser{
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 		peerTTL:    time.Minute,
@@ -97,7 +97,7 @@ func TestSpectatorPeerChooser_StartStop(t *testing.T) {
 
 func TestSpectatorPeerChooser_SetSpectators(t *testing.T) {
 	chooser := &SpectatorPeerChooser{
-		logger: testlogger.New(t),
+		logger: zap.NewNop(),
 	}
 
 	spectators := &Spectators{spectators: make(map[string]Spectator)}
@@ -117,7 +117,7 @@ func TestSpectatorPeerChooser_Choose_Success(t *testing.T) {
 
 	chooser := &SpectatorPeerChooser{
 		transport:  peerTransport,
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 		spectators: &Spectators{
@@ -166,7 +166,7 @@ func TestSpectatorPeerChooser_Choose_ReusesPeer(t *testing.T) {
 
 	chooser := &SpectatorPeerChooser{
 		transport:  peerTransport,
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 		spectators: &Spectators{
@@ -216,7 +216,7 @@ func TestSpectatorPeerChooser_Choose_TracksLastUsed(t *testing.T) {
 
 	chooser := &SpectatorPeerChooser{
 		transport:  peerTransport,
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: mockClock,
 		spectators: &Spectators{
@@ -260,7 +260,7 @@ func TestSpectatorPeerChooser_StartStop_WithTTL(t *testing.T) {
 
 	chooser := &SpectatorPeerChooser{
 		transport:  peerTransport,
-		logger:     testlogger.New(t),
+		logger:     zap.NewNop(),
 		peers:      make(map[string]*trackedPeer),
 		timeSource: clock.NewRealTimeSource(),
 		peerTTL:    100 * time.Millisecond,
@@ -312,7 +312,7 @@ func TestSpectatorPeerChooser_EvictStalePeers(t *testing.T) {
 
 			chooser := &SpectatorPeerChooser{
 				transport:  peerTransport,
-				logger:     testlogger.New(t),
+				logger:     zap.NewNop(),
 				peers:      make(map[string]*trackedPeer),
 				timeSource: mockClock,
 				peerTTL:    tc.peerTTL,

@@ -8,17 +8,15 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
 )
 
 func TestModule(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockLogger := log.NewNoop()
-
 	mockShardProcessorFactory := NewMockShardProcessorFactory[*MockShardProcessor](ctrl)
 	shardDistributorExecutorClient := NewMockClient(ctrl)
 	shardDistributorExecutorClient.EXPECT().
@@ -42,7 +40,7 @@ func TestModule(t *testing.T) {
 		}),
 		fx.Supply(
 			fx.Annotate(tally.NoopScope, fx.As(new(tally.Scope))),
-			fx.Annotate(mockLogger, fx.As(new(log.Logger))),
+			zap.NewNop(),
 			fx.Annotate(mockShardProcessorFactory, fx.As(new(ShardProcessorFactory[*MockShardProcessor]))),
 			fx.Annotate(clock.NewMockedTimeSource(), fx.As(new(clock.TimeSource))),
 			config,
@@ -62,8 +60,6 @@ type MockShardProcessor2 struct {
 
 func TestModuleWithNamespace(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockLogger := log.NewNoop()
-
 	shardDistributorExecutorClient := NewMockClient(ctrl)
 	shardDistributorExecutorClient.EXPECT().
 		Heartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -94,7 +90,7 @@ func TestModuleWithNamespace(t *testing.T) {
 		}),
 		fx.Supply(
 			fx.Annotate(tally.NoopScope, fx.As(new(tally.Scope))),
-			fx.Annotate(mockLogger, fx.As(new(log.Logger))),
+			zap.NewNop(),
 			fx.Annotate(clock.NewMockedTimeSource(), fx.As(new(clock.TimeSource))),
 			fx.Annotate(mockFactory1, fx.As(new(ShardProcessorFactory[*MockShardProcessor1]))),
 			fx.Annotate(mockFactory2, fx.As(new(ShardProcessorFactory[*MockShardProcessor2]))),

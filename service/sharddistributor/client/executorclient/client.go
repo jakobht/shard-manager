@@ -10,10 +10,10 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/fx"
 	"go.uber.org/yarpc"
+	"go.uber.org/zap"
 
 	timeoutwrapper "github.com/cadence-workflow/shard-manager/client/wrappers/timeout"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
@@ -77,7 +77,7 @@ type Params[SP ShardProcessor] struct {
 
 	ExecutorClient        Client
 	MetricsScope          tally.Scope
-	Logger                log.Logger
+	Logger                *zap.Logger
 	ShardProcessorFactory ShardProcessorFactory[SP]
 	Config                clientcommon.Config
 	TimeSource            clock.TimeSource
@@ -118,7 +118,7 @@ func NewExecutor[SP ShardProcessor](params Params[SP]) (Executor[SP], error) {
 }
 
 func newExecutorWithConfig[SP ShardProcessor](params Params[SP], namespaceConfig *clientcommon.NamespaceConfig) (Executor[SP], error) {
-	shardDistributorClient, err := createShardDistributorExecutorClient(params.ExecutorClient, params.MetricsScope, params.Logger)
+	shardDistributorClient, err := createShardDistributorExecutorClient(params.ExecutorClient, params.MetricsScope)
 	if err != nil {
 		return nil, fmt.Errorf("create shard distributor executor client: %w", err)
 	}
@@ -162,7 +162,7 @@ func newExecutorWithConfig[SP ShardProcessor](params Params[SP], namespaceConfig
 	return executor, nil
 }
 
-func createShardDistributorExecutorClient(client Client, metricsScope tally.Scope, logger log.Logger) (Client, error) {
+func createShardDistributorExecutorClient(client Client, metricsScope tally.Scope) (Client, error) {
 
 	shardDistributorExecutorClient := timeoutwrapper.NewShardDistributorExecutorClient(client, timeoutwrapper.ShardDistributorExecutorDefaultTimeout)
 

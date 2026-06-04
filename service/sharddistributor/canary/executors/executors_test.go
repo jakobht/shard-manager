@@ -9,9 +9,9 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/fx"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/canary/processor"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/canary/processorephemeral"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
@@ -91,7 +91,7 @@ func TestNewExecutor_InvalidConfig(t *testing.T) {
 			name: "No namespaces configured",
 			params: executorclient.Params[*processor.ShardProcessor]{
 				MetricsScope:          tally.NoopScope,
-				Logger:                log.NewNoop(),
+				Logger:                zap.NewNop(),
 				ShardProcessorFactory: mockShardProcessorFactory,
 				Config: clientcommon.Config{
 					Namespaces: []clientcommon.NamespaceConfig{},
@@ -104,7 +104,7 @@ func TestNewExecutor_InvalidConfig(t *testing.T) {
 			name: "No valid namespace",
 			params: executorclient.Params[*processor.ShardProcessor]{
 				MetricsScope:          tally.NoopScope,
-				Logger:                log.NewNoop(),
+				Logger:                zap.NewNop(),
 				ShardProcessorFactory: mockShardProcessorFactory,
 				Config: clientcommon.Config{
 					Namespaces: []clientcommon.NamespaceConfig{
@@ -186,7 +186,7 @@ func createMockParams[SP executorclient.ShardProcessor](
 
 	return executorclient.Params[SP]{
 		MetricsScope:          tally.NoopScope,
-		Logger:                log.NewNoop(),
+		Logger:                zap.NewNop(),
 		ShardProcessorFactory: mockShardProcessorFactory,
 		Config: clientcommon.Config{
 			Namespaces: []clientcommon.NamespaceConfig{

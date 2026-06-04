@@ -11,10 +11,10 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/goleak"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/client/sharddistributor"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	csync "github.com/cadence-workflow/shard-manager/service/sharddistributor/client/spectatorclient/sync"
 )
@@ -32,7 +32,7 @@ func TestWatchLoopBasicFlow(t *testing.T) {
 	spectator := &spectatorImpl{
 		namespace:        "test-ns",
 		client:           mockClient,
-		logger:           log.NewNoop(),
+		logger:           zap.NewNop(),
 		scope:            tally.NoopScope,
 		timeSource:       clock.NewRealTimeSource(),
 		firstStateSignal: csync.NewResettableSignal(),
@@ -102,7 +102,7 @@ func TestGetShardOwner_CacheMiss_FallbackToRPC(t *testing.T) {
 	spectator := &spectatorImpl{
 		namespace:        "test-ns",
 		client:           mockClient,
-		logger:           log.NewNoop(),
+		logger:           zap.NewNop(),
 		scope:            tally.NoopScope,
 		timeSource:       clock.NewRealTimeSource(),
 		firstStateSignal: csync.NewResettableSignal(),
@@ -183,7 +183,7 @@ func TestStreamReconnection(t *testing.T) {
 	spectator := &spectatorImpl{
 		namespace:        "test-ns",
 		client:           mockClient,
-		logger:           log.NewNoop(),
+		logger:           zap.NewNop(),
 		scope:            testScope,
 		timeSource:       mockTimeSource,
 		firstStateSignal: csync.NewResettableSignal(),
@@ -242,7 +242,7 @@ func TestGetShardOwner_TimeoutBeforeFirstState(t *testing.T) {
 	spectator := &spectatorImpl{
 		namespace:        "test-ns",
 		client:           mockClient,
-		logger:           log.NewNoop(),
+		logger:           zap.NewNop(),
 		scope:            tally.NoopScope,
 		timeSource:       clock.NewRealTimeSource(),
 		firstStateSignal: csync.NewResettableSignal(),
@@ -269,7 +269,7 @@ func TestWatchLoopDisabled(t *testing.T) {
 	spectator := &spectatorImpl{
 		firstStateSignal: stateSignal,
 		timeSource:       timeSource,
-		logger:           log.NewNoop(),
+		logger:           zap.NewNop(),
 		enabled:          func() bool { return false },
 	}
 
