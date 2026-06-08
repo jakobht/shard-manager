@@ -66,7 +66,7 @@ func TestNamespaceCommand_help_listsSubcommands(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"state", "list"} {
+	for _, want := range []string{"state", "list", "force-reset"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("namespace help should list %q subcommand:\n%s", want, out)
 		}

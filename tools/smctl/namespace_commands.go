@@ -1,6 +1,7 @@
 package smctl
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	cliv3 "github.com/urfave/cli/v3"
@@ -30,6 +32,7 @@ func namespaceCommand(cf ClientFactory) *cliv3.Command {
 		Commands: []*cliv3.Command{
 			namespaceStateCommand(cf),
 			namespaceListCommand(cf),
+			namespaceForceResetCommand(cf),
 		},
 	}
 }
@@ -170,4 +173,91 @@ func resolveWriter(cmd *cliv3.Command) io.Writer {
 		}
 	}
 	return os.Stdout
+}
+
+// namespaceForceResetCommand wipes etcd state for a namespace by calling
+// shard-manager's ForceResetNamespace API.
+func namespaceForceResetCommand(cf ClientFactory) *cliv3.Command {
+	return &cliv3.Command{
+		Name:    "force-reset",
+		Aliases: []string{"fr"},
+		Usage:   "Delete all etcd state for a namespace",
+		Description: "Calls ForceResetNamespace on shard-manager. Wipes the leader key, " +
+			"executor heartbeats, shard assignments, and statistics for the namespace. " +
+			"Executors will re-register on their next heartbeat. ",
+		Action: func(ctx context.Context, cmd *cliv3.Command) error {
+			return runForceResetNamespace(ctx, cmd, resolveWriter(cmd), resolveReader(cmd), cf)
+		},
+	}
+}
+
+// resolveReader returns the reader to use it for interactive prompts.
+func resolveReader(cmd *cliv3.Command) io.Reader {
+	if cmd != nil {
+		if root := cmd.Root(); root != nil && root.Reader != nil {
+			return root.Reader
+		}
+	}
+	return os.Stdin
+}
+
+func runForceResetNamespace(
+	ctx context.Context,
+	cmd *cliv3.Command,
+	out io.Writer,
+	in io.Reader,
+	cf ClientFactory,
+) error {
+	namespace := cmd.String(FlagNamespace)
+	if namespace == "" {
+		return fmt.Errorf("--%s is required", FlagNamespace)
+	}
+
+	if err := confirmNamespace(out, in, namespace); err != nil {
+		return err
+	}
+
+	client, err := cf.ShardManagerClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, cmd.Duration(FlagContextTimeout))
+	defer cancel()
+
+	resp, err := client.ForceResetNamespace(callCtx, &types.ForceResetNamespaceRequest{
+		Namespace: namespace,
+	})
+	if err != nil {
+		return fmt.Errorf("ForceResetNamespace: %w", err)
+	}
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(resp); err != nil {
+		return fmt.Errorf("encode response: %w", err)
+	}
+	return nil
+}
+
+// confirmNamespace prompts the operator to retype the namespace name and
+// returns an error if the typed value does not match exactly.
+// The compare is case-sensitive
+func confirmNamespace(out io.Writer, in io.Reader, namespace string) error {
+	fmt.Fprintf(out,
+		"This will DELETE all etcd state for namespace %q. "+
+			"Retype the namespace to confirm: ", namespace,
+	)
+
+	scanner := bufio.NewScanner(in)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("read confirmation: %w", err)
+		}
+		return fmt.Errorf("confirmation aborted: no input received")
+	}
+	if got := strings.TrimSpace(scanner.Text()); got != namespace {
+		return fmt.Errorf("confirmation mismatch: typed %q, expected %q", got, namespace)
+	}
+	return nil
 }
