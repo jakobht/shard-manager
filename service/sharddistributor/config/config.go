@@ -36,7 +36,6 @@ type (
 	// Config represents configuration for shard manager service
 	Config struct {
 		LoadBalancingMode dynamicproperties.StringPropertyFnWithNamespaceFilters
-		MigrationMode     dynamicproperties.StringPropertyFnWithNamespaceFilters
 		MaxEtcdTxnOps     dynamicproperties.IntPropertyFn
 
 		LoadBalancingNaive  LoadBalancingNaiveConfig
@@ -78,7 +77,6 @@ type (
 	Namespace struct {
 		Name string `yaml:"name"`
 		Type string `yaml:"type"` // The field is a string since it is shared between global config Supported values: fixed|ephemeral.
-		Mode string `yaml:"mode"` // TODO: this should be an ENUM with possible modes: enabled, read_only, proxy, disabled
 		// ShardNum is defined for fixed namespace.
 		ShardNum int64 `yaml:"shardNum"`
 	}
@@ -137,7 +135,6 @@ var MigrationMode = map[string]types.MigrationMode{
 func NewConfig(dc *dynamicconfig.Collection) *Config {
 	return &Config{
 		LoadBalancingMode: dc.GetStringPropertyFilteredByNamespace(dynamicproperties.ShardDistributorLoadBalancingMode),
-		MigrationMode:     dc.GetStringPropertyFilteredByNamespace(dynamicproperties.ShardDistributorMigrationMode),
 		MaxEtcdTxnOps:     dc.GetIntProperty(dynamicproperties.ShardDistributorMaxEtcdTxnOps),
 
 		LoadBalancingNaive: LoadBalancingNaiveConfig{
@@ -152,16 +149,6 @@ func NewConfig(dc *dynamicconfig.Collection) *Config {
 			SevereImbalanceRatio:      dc.GetFloat64PropertyFilteredByNamespace(dynamicproperties.ShardDistributorLoadBalancingGreedySevereImbalanceRatio),
 		},
 	}
-}
-
-// GetMigrationMode gets the migration mode for a given namespace
-// If the mode is not set, it defaults to MigrationModeINVALID
-func (c *Config) GetMigrationMode(namespace string) types.MigrationMode {
-	mode, ok := MigrationMode[c.MigrationMode(namespace)]
-	if !ok {
-		return MigrationMode[MigrationModeINVALID]
-	}
-	return mode
 }
 
 const (
@@ -186,16 +173,6 @@ func (c *Config) GetLoadBalancingMode(namespace string) types.LoadBalancingMode 
 	}
 
 	return mode
-}
-
-func (s *ShardDistribution) GetMigrationMode(namespace string) types.MigrationMode {
-	for _, ns := range s.Namespaces {
-		if ns.Name == namespace {
-			return MigrationMode[ns.Mode]
-		}
-	}
-	// TODO in the dynamic configuration I will setup a default value
-	return MigrationMode[MigrationModeONBOARDED]
 }
 
 var _ yaml.Unmarshaler = (*YamlNode)(nil)

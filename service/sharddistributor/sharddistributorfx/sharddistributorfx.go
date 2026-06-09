@@ -84,7 +84,7 @@ func provideServers(params serversParams) ServersResult {
 	wrappedHandler := metered.NewMetricsHandler(rawHandler, params.Logger, params.MetricsClient)
 	wrappedHandler = accesscontrolled.NewHandler(wrappedHandler, params.Authorizer)
 
-	executorHandler := handler.NewExecutorHandler(params.Logger, params.Store, params.TimeSource, params.ShardDistributionCfg, params.Config, params.MetricsClient)
+	executorHandler := handler.NewExecutorHandler(params.Logger, params.Store, params.TimeSource, params.ShardDistributionCfg, params.MetricsClient)
 	wrappedExecutor := metered.NewExecutorMetricsExecutor(executorHandler, params.Logger, params.MetricsClient)
 
 	params.Lifecycle.Append(fx.StartStopHook(rawHandler.Start, rawHandler.Stop))

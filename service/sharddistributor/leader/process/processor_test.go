@@ -16,13 +16,11 @@ import (
 
 	"github.com/cadence-workflow/shard-manager/common"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/dynamicconfig/dynamicproperties"
 	"github.com/cadence-workflow/shard-manager/common/log/testlogger"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	metricmocks "github.com/cadence-workflow/shard-manager/common/metrics/mocks"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/config"
-	"github.com/cadence-workflow/shard-manager/service/sharddistributor/config/configtest"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/loadbalancer/plan"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store"
 )
@@ -38,14 +36,6 @@ type testDependencies struct {
 }
 
 func setupProcessorTest(t *testing.T, namespaceType string) *testDependencies {
-	migrationConfig := configtest.NewTestMigrationConfig(t,
-		configtest.ConfigEntry{
-			Key:   dynamicproperties.ShardDistributorMigrationMode,
-			Value: config.MigrationModeONBOARDED})
-	return setupProcessorTestWithMigrationConfig(t, namespaceType, migrationConfig)
-}
-
-func setupProcessorTestWithMigrationConfig(t *testing.T, namespaceType string, migrationConfig *config.Config) *testDependencies {
 	ctrl := gomock.NewController(t)
 	mockedClock := clock.NewMockedTimeSource()
 	deps := &testDependencies{
@@ -53,7 +43,7 @@ func setupProcessorTestWithMigrationConfig(t *testing.T, namespaceType string, m
 		store:      store.NewMockStore(ctrl),
 		election:   store.NewMockElection(ctrl),
 		timeSource: mockedClock,
-		cfg:        config.Namespace{Name: "test-ns", ShardNum: 2, Type: namespaceType, Mode: config.MigrationModeONBOARDED},
+		cfg:        config.Namespace{Name: "test-ns", ShardNum: 2, Type: namespaceType},
 	}
 	deps.sdConfig = &config.Config{
 		LoadBalancingMode: func(namespace string) string {
@@ -64,7 +54,6 @@ func setupProcessorTestWithMigrationConfig(t *testing.T, namespaceType string, m
 				return 2.0
 			},
 		},
-		MigrationMode: migrationConfig.MigrationMode,
 	}
 
 	deps.factory = NewProcessorFactory(
@@ -445,159 +434,6 @@ func TestRunLoop_ContextCancellation(t *testing.T) {
 
 	// Wait for the main process loop to exit gracefully
 	processor.wg.Wait()
-}
-
-func TestRebalanceShards_WithUnassignedShardsButMigrationModeNotOnboarded(t *testing.T) {
-	migrationConfig := configtest.NewTestMigrationConfig(t, configtest.ConfigEntry{
-		Key:   dynamicproperties.ShardDistributorMigrationMode,
-		Value: config.MigrationModeLOCALPASSTHROUGH})
-	mocks := setupProcessorTestWithMigrationConfig(t, config.NamespaceTypeFixed, migrationConfig)
-	defer mocks.ctrl.Finish()
-	processor := mocks.factory.CreateProcessor(mocks.cfg, mocks.store, mocks.election).(*namespaceProcessor)
-
-	now := mocks.timeSource.Now()
-	heartbeats := map[string]store.HeartbeatState{
-		"exec-1": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now},
-	}
-	// Note: shard "1" is missing from assignments
-	assignments := map[string]store.AssignedState{
-		"exec-1": {
-			AssignedShards: map[string]*types.ShardAssignment{
-				"0": {Status: types.AssignmentStatusREADY},
-			},
-		},
-	}
-	mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "0").Return(nil, nil)
-	mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "1").Return(nil, nil)
-	mocks.store.EXPECT().GetState(gomock.Any(), mocks.cfg.Name).Return(&store.NamespaceState{
-		Executors:        heartbeats,
-		ShardAssignments: assignments,
-	}, nil)
-	// These are the expected calls in case of onboarding, with the assignment of new shards
-	mocks.election.EXPECT().Guard().Return(store.NopGuard()).Times(0)
-	mocks.store.EXPECT().AssignShards(gomock.Any(), mocks.cfg.Name, gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ string, request store.AssignShardsRequest, _ store.GuardFunc) error {
-			assert.Len(t, request.NewState.ShardAssignments["exec-1"].AssignedShards, 2, "Both shards should now be assigned to exec-1")
-			return nil
-		},
-	).Times(0)
-
-	err := processor.rebalanceShards(context.Background())
-	require.NoError(t, err)
-}
-
-func TestRebalanceShards_ShadowModeWithStaleExecutors(t *testing.T) {
-	t.Run("stale executors are deleted in shadow mode", func(t *testing.T) {
-		migrationConfig := configtest.NewTestMigrationConfig(t, configtest.ConfigEntry{
-			Key:   dynamicproperties.ShardDistributorMigrationMode,
-			Value: config.MigrationModeLOCALPASSTHROUGH})
-		mocks := setupProcessorTestWithMigrationConfig(t, config.NamespaceTypeFixed, migrationConfig)
-		defer mocks.ctrl.Finish()
-		processor := mocks.factory.CreateProcessor(mocks.cfg, mocks.store, mocks.election).(*namespaceProcessor)
-
-		now := mocks.timeSource.Now()
-		heartbeats := map[string]store.HeartbeatState{
-			"exec-1": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now},
-			"exec-2": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now.Add(-10 * time.Second)},
-		}
-		assignments := map[string]store.AssignedState{
-			"exec-1": {
-				AssignedShards: map[string]*types.ShardAssignment{
-					"0": {Status: types.AssignmentStatusREADY},
-				},
-				ModRevision: 1,
-			},
-			"exec-2": {
-				AssignedShards: map[string]*types.ShardAssignment{
-					"1": {Status: types.AssignmentStatusREADY},
-				},
-				ModRevision: 1,
-			},
-		}
-		mocks.store.EXPECT().GetState(gomock.Any(), mocks.cfg.Name).Return(&store.NamespaceState{
-			Executors:        heartbeats,
-			ShardAssignments: assignments,
-		}, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "0").Return(&store.ShardOwner{ExecutorID: "exec-1"}, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "1").Return(&store.ShardOwner{ExecutorID: "exec-2"}, nil)
-		mocks.election.EXPECT().Guard().Return(store.NopGuard())
-		mocks.store.EXPECT().DeleteExecutors(gomock.Any(), mocks.cfg.Name, []string{"exec-2"}, gomock.Any()).Return(nil)
-
-		err := processor.rebalanceShards(context.Background())
-		require.NoError(t, err)
-	})
-
-	t.Run("delete executors error is non-blocking in shadow mode", func(t *testing.T) {
-		migrationConfig := configtest.NewTestMigrationConfig(t, configtest.ConfigEntry{
-			Key:   dynamicproperties.ShardDistributorMigrationMode,
-			Value: config.MigrationModeLOCALPASSTHROUGH})
-		mocks := setupProcessorTestWithMigrationConfig(t, config.NamespaceTypeFixed, migrationConfig)
-		defer mocks.ctrl.Finish()
-		processor := mocks.factory.CreateProcessor(mocks.cfg, mocks.store, mocks.election).(*namespaceProcessor)
-
-		now := mocks.timeSource.Now()
-		heartbeats := map[string]store.HeartbeatState{
-			"exec-1": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now},
-			"exec-2": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now.Add(-10 * time.Second)},
-		}
-		assignments := map[string]store.AssignedState{
-			"exec-1": {
-				AssignedShards: map[string]*types.ShardAssignment{
-					"0": {Status: types.AssignmentStatusREADY},
-				},
-				ModRevision: 1,
-			},
-			"exec-2": {
-				AssignedShards: map[string]*types.ShardAssignment{
-					"1": {Status: types.AssignmentStatusREADY},
-				},
-				ModRevision: 1,
-			},
-		}
-		mocks.store.EXPECT().GetState(gomock.Any(), mocks.cfg.Name).Return(&store.NamespaceState{
-			Executors:        heartbeats,
-			ShardAssignments: assignments,
-		}, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "0").Return(&store.ShardOwner{ExecutorID: "exec-1"}, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "1").Return(&store.ShardOwner{ExecutorID: "exec-2"}, nil)
-		mocks.election.EXPECT().Guard().Return(store.NopGuard())
-		mocks.store.EXPECT().DeleteExecutors(gomock.Any(), mocks.cfg.Name, []string{"exec-2"}, gomock.Any()).Return(errors.New("transaction failed"))
-
-		err := processor.rebalanceShards(context.Background())
-		require.NoError(t, err)
-	})
-
-	t.Run("no stale executors - delete not called in shadow mode", func(t *testing.T) {
-		migrationConfig := configtest.NewTestMigrationConfig(t, configtest.ConfigEntry{
-			Key:   dynamicproperties.ShardDistributorMigrationMode,
-			Value: config.MigrationModeLOCALPASSTHROUGH})
-		mocks := setupProcessorTestWithMigrationConfig(t, config.NamespaceTypeFixed, migrationConfig)
-		defer mocks.ctrl.Finish()
-		processor := mocks.factory.CreateProcessor(mocks.cfg, mocks.store, mocks.election).(*namespaceProcessor)
-
-		now := mocks.timeSource.Now()
-		heartbeats := map[string]store.HeartbeatState{
-			"exec-1": {Status: types.ExecutorStatusACTIVE, LastHeartbeat: now},
-		}
-		assignments := map[string]store.AssignedState{
-			"exec-1": {
-				AssignedShards: map[string]*types.ShardAssignment{
-					"0": {Status: types.AssignmentStatusREADY},
-				},
-			},
-		}
-		mocks.store.EXPECT().GetState(gomock.Any(), mocks.cfg.Name).Return(&store.NamespaceState{
-			Executors:        heartbeats,
-			ShardAssignments: assignments,
-		}, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "0").Return(nil, nil)
-		mocks.store.EXPECT().GetShardOwner(gomock.Any(), mocks.cfg.Name, "1").Return(nil, nil)
-		// DeleteExecutors should not be called when there are no stale executors, thus Times(0)
-		mocks.store.EXPECT().DeleteExecutors(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
-
-		err := processor.rebalanceShards(context.Background())
-		require.NoError(t, err)
-	})
 }
 
 func TestRebalanceShards_NoShardsToReassign(t *testing.T) {

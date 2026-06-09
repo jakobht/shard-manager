@@ -8,7 +8,6 @@ import (
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
 	"github.com/cadence-workflow/shard-manager/common/log"
-	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/config"
@@ -26,7 +25,6 @@ type executor struct {
 	timeSource           clock.TimeSource
 	storage              store.Store
 	shardDistributionCfg config.ShardDistribution
-	cfg                  *config.Config
 	metricsClient        metrics.Client
 }
 
@@ -35,7 +33,6 @@ func NewExecutorHandler(
 	storage store.Store,
 	timeSource clock.TimeSource,
 	shardDistributionCfg config.ShardDistribution,
-	cfg *config.Config,
 	metricsClient metrics.Client,
 ) Executor {
 	return &executor{
@@ -43,7 +40,6 @@ func NewExecutorHandler(
 		timeSource:           timeSource,
 		storage:              storage,
 		shardDistributionCfg: shardDistributionCfg,
-		cfg:                  cfg,
 		metricsClient:        metricsClient,
 	}
 }
@@ -56,15 +52,6 @@ func (h *executor) Heartbeat(ctx context.Context, request *types.ExecutorHeartbe
 	}
 
 	heartbeatTime := h.timeSource.Now().UTC()
-	mode := h.cfg.GetMigrationMode(request.Namespace)
-
-	switch mode {
-	case types.MigrationModeINVALID:
-		return nil, &types.InternalServiceError{Message: fmt.Sprintf("namespace's migration mode is invalid: %v", err)}
-	case types.MigrationModeLOCALPASSTHROUGH:
-		h.logger.Info("Migration mode is local passthrough, no calls to heartbeat should be allowed", tag.ShardNamespace(request.Namespace), tag.ShardExecutor(request.ExecutorID))
-		return _convertResponse(nil, mode), nil
-	}
 
 	newHeartbeat := store.HeartbeatState{
 		LastHeartbeat:  heartbeatTime,
@@ -88,7 +75,7 @@ func (h *executor) Heartbeat(ctx context.Context, request *types.ExecutorHeartbe
 	// to measure, so don't need to emit metrics in that case
 	h.emitShardAssignmentMetrics(request.Namespace, heartbeatTime, previousHeartbeat, assignedShards)
 
-	return _convertResponse(assignedShards, mode), nil
+	return _convertResponse(assignedShards, types.MigrationModeONBOARDED), nil
 }
 
 // emitShardAssignmentMetrics emits the following metrics for newly assigned shards:

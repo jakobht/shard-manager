@@ -11,8 +11,6 @@ import (
 
 	"github.com/cadence-workflow/shard-manager/common"
 	"github.com/cadence-workflow/shard-manager/common/clock"
-	"github.com/cadence-workflow/shard-manager/common/dynamicconfig"
-	"github.com/cadence-workflow/shard-manager/common/dynamicconfig/dynamicproperties"
 	"github.com/cadence-workflow/shard-manager/common/log/testlogger"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	metricmocks "github.com/cadence-workflow/shard-manager/common/metrics/mocks"
@@ -33,8 +31,7 @@ func TestHeartbeat(t *testing.T) {
 		mockStore := store.NewMockStore(ctrl)
 		mockTimeSource := clock.NewMockedTimeSourceAt(now)
 		shardDistributionCfg := config.ShardDistribution{}
-		cfg := newConfig(t, []configEntry{})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
+		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, metrics.NoopClient)
 
 		req := &types.ExecutorHeartbeatRequest{
 			Namespace:  namespace,
@@ -58,8 +55,7 @@ func TestHeartbeat(t *testing.T) {
 		mockStore := store.NewMockStore(ctrl)
 		mockTimeSource := clock.NewMockedTimeSourceAt(now)
 		shardDistributionCfg := config.ShardDistribution{}
-		cfg := newConfig(t, []configEntry{})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
+		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, metrics.NoopClient)
 
 		req := &types.ExecutorHeartbeatRequest{
 			Namespace:  namespace,
@@ -88,8 +84,7 @@ func TestHeartbeat(t *testing.T) {
 		mockStore := store.NewMockStore(ctrl)
 		mockTimeSource := clock.NewMockedTimeSourceAt(now)
 		shardDistributionCfg := config.ShardDistribution{}
-		cfg := newConfig(t, []configEntry{})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
+		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, metrics.NoopClient)
 
 		req := &types.ExecutorHeartbeatRequest{
 			Namespace:  namespace,
@@ -118,8 +113,7 @@ func TestHeartbeat(t *testing.T) {
 		mockStore := store.NewMockStore(ctrl)
 		mockTimeSource := clock.NewMockedTimeSource()
 		shardDistributionCfg := config.ShardDistribution{}
-		cfg := newConfig(t, []configEntry{})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
+		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, metrics.NoopClient)
 
 		req := &types.ExecutorHeartbeatRequest{
 			Namespace:  namespace,
@@ -135,71 +129,13 @@ func TestHeartbeat(t *testing.T) {
 		require.Contains(t, err.Error(), expectedErr.Error())
 	})
 
-	// Test Case 5: Heartbeat with executor associated invalid migration mode
-	t.Run("MigrationModeInvald", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStore := store.NewMockStore(ctrl)
-		mockTimeSource := clock.NewMockedTimeSource()
-		shardDistributionCfg := config.ShardDistribution{
-			Namespaces: []config.Namespace{{Name: namespace, Mode: config.MigrationModeINVALID}},
-		}
-		cfg := newConfig(t, []configEntry{{dynamicproperties.ShardDistributorMigrationMode, config.MigrationModeINVALID}})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
-
-		req := &types.ExecutorHeartbeatRequest{
-			Namespace:  namespace,
-			ExecutorID: executorID,
-			Status:     types.ExecutorStatusACTIVE,
-		}
-		previousHeartbeat := store.HeartbeatState{
-			LastHeartbeat: now,
-			Status:        types.ExecutorStatusACTIVE,
-		}
-
-		expectedErr := errors.New("migration mode is invalid")
-		mockStore.EXPECT().GetHeartbeat(gomock.Any(), namespace, executorID).Return(&previousHeartbeat, nil, nil)
-
-		_, err := handler.Heartbeat(ctx, req)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), expectedErr.Error())
-	})
-
-	// Test Case 6: Heartbeat with executor associated with local passthrough mode
-	t.Run("MigrationModeLocalPassthrough", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStore := store.NewMockStore(ctrl)
-		mockTimeSource := clock.NewMockedTimeSource()
-		shardDistributionCfg := config.ShardDistribution{
-			Namespaces: []config.Namespace{{Name: namespace, Mode: config.MigrationModeLOCALPASSTHROUGH}},
-		}
-		cfg := newConfig(t, []configEntry{{dynamicproperties.ShardDistributorMigrationMode, config.MigrationModeLOCALPASSTHROUGH}})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
-
-		req := &types.ExecutorHeartbeatRequest{
-			Namespace:  namespace,
-			ExecutorID: executorID,
-			Status:     types.ExecutorStatusACTIVE,
-		}
-		previousHeartbeat := store.HeartbeatState{
-			LastHeartbeat: now,
-			Status:        types.ExecutorStatusACTIVE,
-		}
-
-		mockStore.EXPECT().GetHeartbeat(gomock.Any(), namespace, executorID).Return(&previousHeartbeat, nil, nil)
-
-		resp, err := handler.Heartbeat(ctx, req)
-		require.NoError(t, err)
-		require.Equal(t, types.MigrationModeLOCALPASSTHROUGH, resp.MigrationMode)
-	})
-
 	// Test Case 9: Heartbeat with metadata validation failure - too many keys
 	t.Run("MetadataValidationTooManyKeys", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockStore := store.NewMockStore(ctrl)
 		mockTimeSource := clock.NewMockedTimeSourceAt(now)
 		shardDistributionCfg := config.ShardDistribution{}
-		cfg := newConfig(t, []configEntry{})
-		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, cfg, metrics.NoopClient)
+		handler := NewExecutorHandler(testlogger.New(t), mockStore, mockTimeSource, shardDistributionCfg, metrics.NoopClient)
 
 		// Create metadata with more than max allowed keys
 		metadata := make(map[string]string)
@@ -376,23 +312,6 @@ func TestConvertResponse(t *testing.T) {
 			require.Equal(t, tc.expectedResp, res)
 		})
 	}
-}
-
-type configEntry struct {
-	key   dynamicproperties.Key
-	value interface{}
-}
-
-func newConfig(t *testing.T, configEntries []configEntry) *config.Config {
-	client := dynamicconfig.NewInMemoryClient()
-	for _, entry := range configEntries {
-		err := client.UpdateValue(entry.key, entry.value)
-		if err != nil {
-			t.Errorf("Failed to update config ")
-		}
-	}
-	dc := dynamicconfig.NewCollection(client, testlogger.New(t))
-	return config.NewConfig(dc)
 }
 
 func TestFilterNewlyAssignedShardIDs(t *testing.T) {

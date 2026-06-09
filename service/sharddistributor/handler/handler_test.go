@@ -656,7 +656,7 @@ func TestListNamespaces(t *testing.T) {
 			name: "single fixed namespace",
 			cfg: config.ShardDistribution{
 				Namespaces: []config.Namespace{
-					{Name: "ns-fixed", Type: config.NamespaceTypeFixed, Mode: "onboarded", ShardNum: 32},
+					{Name: "ns-fixed", Type: config.NamespaceTypeFixed, ShardNum: 32},
 				},
 			},
 			want: []*types.NamespaceConfig{
@@ -667,15 +667,15 @@ func TestListNamespaces(t *testing.T) {
 			name: "preserves order and surfaces both fixed and ephemeral",
 			cfg: config.ShardDistribution{
 				Namespaces: []config.Namespace{
-					{Name: "first", Type: config.NamespaceTypeFixed, Mode: "onboarded", ShardNum: 8},
-					{Name: "second", Type: config.NamespaceTypeEphemeral, Mode: "distributed_pass"},
-					{Name: "third", Type: config.NamespaceTypeFixed, Mode: "local_pass", ShardNum: 16},
+					{Name: "first", Type: config.NamespaceTypeFixed, ShardNum: 8},
+					{Name: "second", Type: config.NamespaceTypeEphemeral},
+					{Name: "third", Type: config.NamespaceTypeFixed, ShardNum: 16},
 				},
 			},
 			want: []*types.NamespaceConfig{
 				{Name: "first", Type: "fixed", Mode: "onboarded", ShardNum: 8},
-				{Name: "second", Type: "ephemeral", Mode: "distributed_pass"},
-				{Name: "third", Type: "fixed", Mode: "local_pass", ShardNum: 16},
+				{Name: "second", Type: "ephemeral", Mode: "onboarded"},
+				{Name: "third", Type: "fixed", Mode: "onboarded", ShardNum: 16},
 			},
 		},
 	}

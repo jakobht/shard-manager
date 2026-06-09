@@ -2651,18 +2651,6 @@ const (
 	// Default value: "thriftrw"
 	SerializationEncoding
 
-	// ShardDistributorMigrationMode is the mode the at represent the state of the migration to rely on shard distributor for the sharding mechanism
-	//
-	// "invalid" invalid mode for the migration, not expected to be used
-	// "local_pass" the executor library is integrated but no external call to the SD happening
-	// "onboarded" the sharding logic in SD is used
-	//
-	// KeyName: shardDistributor.migrationMode
-	// Value type: String
-	// Default value: onboarded
-	// Allowed filters: namespace
-	ShardDistributorMigrationMode
-
 	// ShardDistributorLoadBalancingMode is the load balancing mode for the shard distributor
 	// Depending on the mode, the shard distributor will use different ways to distribute the shards
 	//
@@ -5301,12 +5289,6 @@ var StringKeys = map[StringKey]DynamicString{
 		KeyName:      "history.serializationEncoding",
 		Description:  "SerializationEncoding is the encoding type for blobs",
 		DefaultValue: string(constants.EncodingTypeThriftRW),
-	},
-	ShardDistributorMigrationMode: {
-		KeyName:      "shardDistributor.migrationMode",
-		Description:  "ShardDistributorMigrationMode is the mode the at represent the state of the migration to rely on shard distributor for the sharding mechanism",
-		DefaultValue: "onboarded",
-		Filters:      []Filter{Namespace},
 	},
 	ShardDistributorLoadBalancingMode: {
 		KeyName:      "shardDistributor.loadBalancingMode",

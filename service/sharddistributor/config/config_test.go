@@ -19,7 +19,6 @@ func TestNewDynamicConfigCreatesInstanceWithProperties(t *testing.T) {
 
 	assert.NotNil(t, config)
 	assert.NotNil(t, config.LoadBalancingMode)
-	assert.NotNil(t, config.MigrationMode)
 	assert.NotNil(t, config.LoadBalancingNaive.MaxDeviation)
 	assert.NotNil(t, config.LoadBalancingGreedy.PerShardCooldown)
 	assert.NotNil(t, config.LoadBalancingGreedy.LoadSmoothingTimeConstant)
@@ -27,48 +26,6 @@ func TestNewDynamicConfigCreatesInstanceWithProperties(t *testing.T) {
 	assert.NotNil(t, config.LoadBalancingGreedy.HysteresisUpperBand)
 	assert.NotNil(t, config.LoadBalancingGreedy.HysteresisLowerBand)
 	assert.NotNil(t, config.LoadBalancingGreedy.SevereImbalanceRatio)
-}
-
-func TestGetMigrationMode(t *testing.T) {
-	tests := []struct {
-		name         string
-		configValue  string
-		expectedMode types.MigrationMode
-	}{
-		{
-			name:         "LocalPassthrough",
-			configValue:  MigrationModeLOCALPASSTHROUGH,
-			expectedMode: types.MigrationModeLOCALPASSTHROUGH,
-		},
-		{
-			name:         "Onboarded",
-			configValue:  MigrationModeONBOARDED,
-			expectedMode: types.MigrationModeONBOARDED,
-		},
-		{
-			name:         "Empty",
-			configValue:  "",
-			expectedMode: types.MigrationModeINVALID,
-		},
-		{
-			name:         "Invalid",
-			configValue:  MigrationModeINVALID,
-			expectedMode: types.MigrationModeINVALID,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := dynamicconfig.NewInMemoryClient()
-			err := client.UpdateValue(dynamicproperties.ShardDistributorMigrationMode, tt.configValue)
-			require.NoError(t, err)
-			dc := dynamicconfig.NewCollection(client, testlogger.New(t))
-			config := NewConfig(dc)
-
-			mode := config.GetMigrationMode("test-namespace")
-			assert.Equal(t, tt.expectedMode, mode)
-		})
-	}
 }
 
 func TestGetLoadBalancingMode(t *testing.T) {
