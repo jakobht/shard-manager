@@ -62,14 +62,6 @@ type Executor[SP ShardProcessor] interface {
 	SetMetadata(metadata map[string]string)
 	// Get the current metadata of the executor
 	GetMetadata() map[string]string
-
-	// AssignShardsFromLocalLogic is used for the migration during local-passthrough, local-passthrough-shadow, distributed-passthrough
-	AssignShardsFromLocalLogic(ctx context.Context, shardAssignment map[string]*types.ShardAssignment) error
-	// RemoveShardsFromLocalLogic is used for the migration during local-passthrough, local-passthrough-shadow, distributed-passthrough
-	RemoveShardsFromLocalLogic(shardIDs []string) error
-
-	// IsOnboardedToSD is returning true if the executor relies on SD for distribution
-	IsOnboardedToSD() bool
 }
 
 type Params[SP ShardProcessor] struct {
@@ -83,6 +75,12 @@ type Params[SP ShardProcessor] struct {
 	TimeSource            clock.TimeSource
 	Metadata              ExecutorMetadata                 `optional:"true"`
 	DrainObserver         clientcommon.DrainSignalObserver `optional:"true"`
+
+	// Enabled gates whether the executor heartbeats to the shard distributor.
+	// It is consulted on every heartbeat tick so callers can roll the executor
+	// in and out at runtime (e.g. a percentage-based onboarding guard). When
+	// nil the executor is always enabled.
+	Enabled func() bool `optional:"true"`
 }
 
 // NewExecutorWithNamespace creates an executor for a specific namespace
@@ -140,6 +138,13 @@ func newExecutorWithConfig[SP ShardProcessor](params Params[SP], namespaceConfig
 		"host": hostname,
 	})
 
+	enabled := params.Enabled
+	if enabled == nil {
+		params.Logger.Warn("no Enabled func supplied to executor; defaulting to always enabled",
+			zap.String("namespace", namespaceConfig.Namespace))
+		enabled = func() bool { return true }
+	}
+
 	executor := &executorImpl[SP]{
 		logger:                 params.Logger,
 		shardDistributorClient: shardDistributorClient,
@@ -156,8 +161,8 @@ func newExecutorWithConfig[SP ShardProcessor](params Params[SP], namespaceConfig
 			data: params.Metadata,
 		},
 		drainObserver: params.DrainObserver,
+		enabled:       enabled,
 	}
-	executor.setMigrationMode(namespaceConfig.GetMigrationMode())
 
 	return executor, nil
 }

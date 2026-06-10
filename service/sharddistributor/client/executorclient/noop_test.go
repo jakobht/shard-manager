@@ -25,8 +25,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/cadence-workflow/shard-manager/common/types"
 )
 
 func TestNoopExecutor(t *testing.T) {
@@ -42,10 +40,6 @@ func TestNoopExecutor(t *testing.T) {
 		assert.Equal(t, "", exec.GetNamespace())
 	})
 
-	t.Run("IsOnboardedToSD returns false", func(t *testing.T) {
-		assert.False(t, exec.IsOnboardedToSD())
-	})
-
 	t.Run("SetMetadata and GetMetadata are no-ops", func(t *testing.T) {
 		exec.SetMetadata(map[string]string{"key": "value"})
 		assert.Nil(t, exec.GetMetadata())
@@ -55,17 +49,5 @@ func TestNoopExecutor(t *testing.T) {
 		sp, err := exec.GetShardProcess(context.Background(), "any-shard")
 		assert.Nil(t, sp)
 		assert.ErrorIs(t, err, ErrShardProcessNotFound)
-	})
-
-	t.Run("AssignShardsFromLocalLogic is a no-op", func(t *testing.T) {
-		err := exec.AssignShardsFromLocalLogic(context.Background(), map[string]*types.ShardAssignment{
-			"shard-1": {},
-		})
-		assert.NoError(t, err)
-	})
-
-	t.Run("RemoveShardsFromLocalLogic is a no-op", func(t *testing.T) {
-		err := exec.RemoveShardsFromLocalLogic([]string{"shard-1"})
-		assert.NoError(t, err)
 	})
 }

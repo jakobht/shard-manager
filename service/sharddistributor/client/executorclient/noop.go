@@ -22,14 +22,11 @@ package executorclient
 
 import (
 	"context"
-
-	"github.com/cadence-workflow/shard-manager/common/types"
 )
 
 // noopExecutor is an Executor implementation used when no shard-distributor
-// config is provided. It acts as if all task lists are locally assigned
-// (local-passthrough behaviour): it never contacts the shard distributor,
-// never manages shard processors, and reports itself as not onboarded to SD.
+// config is provided. It acts as if all task lists are locally assigned: it
+// never contacts the shard distributor and never manages shard processors.
 type noopExecutor[SP ShardProcessor] struct{}
 
 // NewNoopExecutor returns an Executor that is a no-op. Use this when the
@@ -42,7 +39,6 @@ func NewNoopExecutor[SP ShardProcessor]() Executor[SP] {
 func (e *noopExecutor[SP]) Start(_ context.Context)         {}
 func (e *noopExecutor[SP]) Stop()                           {}
 func (e *noopExecutor[SP]) GetNamespace() string            { return "" }
-func (e *noopExecutor[SP]) IsOnboardedToSD() bool           { return false }
 func (e *noopExecutor[SP]) SetMetadata(_ map[string]string) {}
 func (e *noopExecutor[SP]) GetMetadata() map[string]string  { return nil }
 
@@ -51,16 +47,4 @@ func (e *noopExecutor[SP]) GetMetadata() map[string]string  { return nil }
 func (e *noopExecutor[SP]) GetShardProcess(_ context.Context, _ string) (SP, error) {
 	var zero SP
 	return zero, ErrShardProcessNotFound
-}
-
-// AssignShardsFromLocalLogic is a no-op: without SD there is no shard
-// assignment to manage.
-func (e *noopExecutor[SP]) AssignShardsFromLocalLogic(_ context.Context, _ map[string]*types.ShardAssignment) error {
-	return nil
-}
-
-// RemoveShardsFromLocalLogic is a no-op: without SD there is no shard
-// assignment to manage.
-func (e *noopExecutor[SP]) RemoveShardsFromLocalLogic(_ []string) error {
-	return nil
 }

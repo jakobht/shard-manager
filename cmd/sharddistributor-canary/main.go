@@ -22,7 +22,6 @@ import (
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/executorclient"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/spectatorclient"
-	"github.com/cadence-workflow/shard-manager/service/sharddistributor/config"
 	"github.com/cadence-workflow/shard-manager/tools/common/commoncli"
 )
 
@@ -59,8 +58,8 @@ func runApp(c *cli.Context) {
 func opts(fixedNamespace, ephemeralNamespace, endpoint string, canaryGRPCPort int, numFixedExecutors, numEphemeral int) fx.Option {
 	configuration := clientcommon.Config{
 		Namespaces: []clientcommon.NamespaceConfig{
-			{Namespace: fixedNamespace, HeartBeatInterval: 1 * time.Second, MigrationMode: config.MigrationModeONBOARDED},
-			{Namespace: ephemeralNamespace, HeartBeatInterval: 1 * time.Second, MigrationMode: config.MigrationModeONBOARDED},
+			{Namespace: fixedNamespace, HeartBeatInterval: 1 * time.Second},
+			{Namespace: ephemeralNamespace, HeartBeatInterval: 1 * time.Second},
 		},
 	}
 
