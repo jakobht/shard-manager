@@ -118,19 +118,6 @@ const (
 	NamespaceTypeEphemeral = "ephemeral"
 )
 
-const (
-	MigrationModeINVALID          = "invalid"
-	MigrationModeLOCALPASSTHROUGH = "local_pass"
-	MigrationModeONBOARDED        = "onboarded"
-)
-
-// MigrationMode maps string migration mode values to types.MigrationMode
-var MigrationMode = map[string]types.MigrationMode{
-	MigrationModeINVALID:          types.MigrationModeINVALID,
-	MigrationModeLOCALPASSTHROUGH: types.MigrationModeLOCALPASSTHROUGH,
-	MigrationModeONBOARDED:        types.MigrationModeONBOARDED,
-}
-
 // NewConfig returns a new instance of Config
 func NewConfig(dc *dynamicconfig.Collection) *Config {
 	return &Config{

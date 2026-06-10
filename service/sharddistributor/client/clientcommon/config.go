@@ -2,11 +2,7 @@ package clientcommon
 
 import (
 	"fmt"
-	"strings"
 	"time"
-
-	"github.com/cadence-workflow/shard-manager/common/types"
-	sdconfig "github.com/cadence-workflow/shard-manager/service/sharddistributor/config"
 )
 
 const defaultPeerTTL = 2 * time.Minute
@@ -15,19 +11,8 @@ const defaultPeerTTL = 2 * time.Minute
 type NamespaceConfig struct {
 	Namespace         string        `yaml:"namespace"`
 	HeartBeatInterval time.Duration `yaml:"heartbeat_interval"`
-	MigrationMode     string        `yaml:"migration_mode"`
 	TTLShard          time.Duration `yaml:"ttl_shard"`  // time after which shards are stopped if they are not used
 	TTLReport         time.Duration `yaml:"ttl_report"` // time after which the shard report status (including load) needs to be updated
-}
-
-// GetMigrationMode converts the string migration mode to types.MigrationMode using the shared configMode map
-func (nc *NamespaceConfig) GetMigrationMode() types.MigrationMode {
-	mode := strings.ToLower(strings.TrimSpace(nc.MigrationMode))
-	if migrationMode, ok := sdconfig.MigrationMode[mode]; ok {
-		return migrationMode
-	}
-	// Default to INVALID if not specified or unrecognized
-	return types.MigrationModeINVALID
 }
 
 // Config represents configuration for multiple namespaces
