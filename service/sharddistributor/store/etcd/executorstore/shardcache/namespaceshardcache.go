@@ -8,6 +8,7 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
@@ -25,6 +26,16 @@ const (
 	// RetryInterval for watch failures is between 50ms to 150ms
 	namespaceRefreshLoopWatchJitterCoeff   = 0.5
 	namespaceRefreshLoopWatchRetryInterval = 100 * time.Millisecond
+
+	// refreshSingleFlightKey is the shared singleflight key for cache-miss
+	// triggered full refreshes.
+	refreshSingleFlightKey = "refresh"
+
+	// refreshOperationTimeout caps how long a singleflighted refresh / stats
+	// fetch can keep the singleflight key occupied. The etcd client config
+	// only sets DialTimeout, so without this bound a hung Get would block
+	// every joiner indefinitely (until stopCh closes).
+	refreshOperationTimeout = 5 * time.Second
 )
 
 type namespaceShardToExecutor struct {
@@ -42,6 +53,16 @@ type namespaceShardToExecutor struct {
 	timeSource       clock.TimeSource
 	pubSub           *executorStatePubSub
 	metricsClient    metrics.Client
+
+	// refreshSF deduplicates concurrent cache-miss refreshes. When N callers
+	// simultaneously miss the cache, only one of them performs the etcd read;
+	// the rest wait on the shared result.
+	refreshSF singleflight.Group
+	// statsSF deduplicates concurrent per-executor statistics cache misses.
+	statsSF singleflight.Group
+	// refreshTimeout bounds an in-flight refresh / stats fetch; defaults to
+	// refreshOperationTimeout.
+	refreshTimeout time.Duration
 
 	executorStatistics *namespaceExecutorStatistics
 }
@@ -72,6 +93,7 @@ func newNamespaceShardToExecutor(etcdPrefix, namespace string, client etcdclient
 		pubSub:             newExecutorStatePubSub(logger, namespace),
 		executorStatistics: newNamespaceExecutorStatistics(),
 		metricsClient:      metricsClient,
+		refreshTimeout:     refreshOperationTimeout,
 	}, nil
 }
 
@@ -148,9 +170,24 @@ func (n *namespaceShardToExecutor) getStats(executorID string) (map[string]etcdt
 	return nil, false
 }
 
-// populateExecutorStatisticsCacheOnMiss fetches executor statistics from etcd and caches them.
-// It is called when there's a cache miss.
+// populateExecutorStatisticsCacheOnMiss fetches executor statistics from etcd
+// and caches them, deduplicating concurrent misses for the same executor.
 func (n *namespaceShardToExecutor) populateExecutorStatisticsCacheOnMiss(ctx context.Context, executorID string) error {
+	ch := n.statsSF.DoChan(executorID, func() (interface{}, error) {
+		fetchCtx, cancel := context.WithTimeout(context.Background(), n.refreshTimeout)
+		defer cancel()
+		return nil, n.fetchAndCacheExecutorStatistics(fetchCtx, executorID)
+	})
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-ch:
+		return res.Err
+	}
+}
+
+func (n *namespaceShardToExecutor) fetchAndCacheExecutorStatistics(ctx context.Context, executorID string) error {
 	statsKey := etcdkeys.BuildExecutorKey(n.etcdPrefix, n.namespace, executorID, etcdkeys.ExecutorShardStatisticsKey)
 	resp, err := n.client.Get(ctx, statsKey)
 	if err != nil {
@@ -464,13 +501,10 @@ func (n *namespaceShardToExecutor) getShardOwnerInMap(ctx context.Context, m *ma
 		return shardOwner, nil
 	}
 
-	// Force refresh the cache
-	err := n.refresh(ctx)
-	if err != nil {
+	if err := n.refreshSingleFlight(ctx); err != nil {
 		return nil, fmt.Errorf("refresh for namespace %s: %w", n.namespace, err)
 	}
 
-	// Check the cache again after refresh
 	n.RLock()
 	shardOwner, ok = (*m)[key]
 	n.RUnlock()
@@ -478,4 +512,25 @@ func (n *namespaceShardToExecutor) getShardOwnerInMap(ctx context.Context, m *ma
 		return shardOwner, nil
 	}
 	return nil, nil
+}
+
+// refreshSingleFlight collapses concurrent cache-miss refreshes into a single
+// etcd read.
+// The refresh runs under a fresh background context bounded by
+// refreshTimeout: detached so the leader's cancellation cannot poison the
+// flight for joiners, bounded, so a hung etcd read cannot hold the singleflight
+// key indefinitely.
+func (n *namespaceShardToExecutor) refreshSingleFlight(ctx context.Context) error {
+	ch := n.refreshSF.DoChan(refreshSingleFlightKey, func() (interface{}, error) {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), n.refreshTimeout)
+		defer cancel()
+		return nil, n.refresh(refreshCtx)
+	})
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-ch:
+		return res.Err
+	}
 }

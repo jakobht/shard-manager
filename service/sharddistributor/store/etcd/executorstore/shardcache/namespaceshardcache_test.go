@@ -655,3 +655,238 @@ func setupNamespaceShardToExecutorTestCase(t *testing.T) *namespaceShardToExecut
 	tc.e = e
 	return tc
 }
+
+// N concurrent cache-miss GetShardOwner calls must collapse into 1 etcd Get.
+func TestNamespaceShardToExecutor_GetShardOwner_SingleFlightDedup(t *testing.T) {
+	tc := setupNamespaceShardToExecutorTestCase(t)
+	defer tc.ctrl.Finish()
+	defer close(tc.stopCh)
+
+	const numCallers = 50
+
+	executorAssignedStateKey := etcdkeys.BuildExecutorKey(tc.prefix, tc.namespace, tc.executorID, etcdkeys.ExecutorAssignedStateKey)
+	assignedState := &etcdtypes.AssignedState{
+		AssignedShards: map[string]*types.ShardAssignment{
+			"shard-1": {Status: types.AssignmentStatusREADY},
+		},
+	}
+	assignedStateJSON, err := json.Marshal(assignedState)
+	require.NoError(t, err)
+
+	// release gates the Get so all callers pile up in singleflight first.
+	release := make(chan struct{})
+	var getCalls atomic.Int32
+	tc.etcdClient.EXPECT().
+		Get(gomock.Any(), tc.executorPrefix, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+			getCalls.Add(1)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return &clientv3.GetResponse{Kvs: []*mvccpb.KeyValue{
+				{Key: []byte(executorAssignedStateKey), Value: assignedStateJSON},
+			}}, nil
+		}).
+		// AnyTimes so a regression surfaces as a count mismatch, not "unexpected call".
+		AnyTimes()
+
+	var wg sync.WaitGroup
+	owners := make([]*store.ShardOwner, numCallers)
+	errs := make([]error, numCallers)
+	start := make(chan struct{})
+	for i := 0; i < numCallers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			owners[i], errs[i] = tc.e.GetShardOwner(context.Background(), "shard-1")
+		}(i)
+	}
+	close(start)
+
+	// Wait until the Get is in flight, then let other callers join the same singleflight.
+	require.Eventually(t, func() bool { return getCalls.Load() >= 1 }, time.Second, time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+
+	close(release)
+	wg.Wait()
+
+	require.EqualValues(t, 1, getCalls.Load(), "concurrent misses should collapse to one etcd Get")
+	for i := 0; i < numCallers; i++ {
+		require.NoError(t, errs[i])
+		require.NotNil(t, owners[i])
+		assert.Equal(t, tc.executorID, owners[i].ExecutorID)
+	}
+}
+
+// Cancelling the singleflight leader must not surface context.Canceled to other waiters.
+func TestNamespaceShardToExecutor_GetShardOwner_CallerCancelDoesNotPoisonFlight(t *testing.T) {
+	tc := setupNamespaceShardToExecutorTestCase(t)
+	defer tc.ctrl.Finish()
+	defer close(tc.stopCh)
+
+	executorAssignedStateKey := etcdkeys.BuildExecutorKey(tc.prefix, tc.namespace, tc.executorID, etcdkeys.ExecutorAssignedStateKey)
+	assignedState := &etcdtypes.AssignedState{
+		AssignedShards: map[string]*types.ShardAssignment{
+			"shard-1": {Status: types.AssignmentStatusREADY},
+		},
+	}
+	assignedStateJSON, err := json.Marshal(assignedState)
+	require.NoError(t, err)
+
+	release := make(chan struct{})
+	var getCalls atomic.Int32
+	tc.etcdClient.EXPECT().
+		Get(gomock.Any(), tc.executorPrefix, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+			getCalls.Add(1)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return &clientv3.GetResponse{Kvs: []*mvccpb.KeyValue{
+				{Key: []byte(executorAssignedStateKey), Value: assignedStateJSON},
+			}}, nil
+		}).
+		AnyTimes()
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancelledErrCh := make(chan error, 1)
+	go func() {
+		_, gerr := tc.e.GetShardOwner(cancelCtx, "shard-1")
+		cancelledErrCh <- gerr
+	}()
+
+	survivorErrCh := make(chan error, 1)
+	survivorOwnerCh := make(chan *store.ShardOwner, 1)
+	go func() {
+		o, gerr := tc.e.GetShardOwner(context.Background(), "shard-1")
+		survivorErrCh <- gerr
+		survivorOwnerCh <- o
+	}()
+
+	require.Eventually(t, func() bool { return getCalls.Load() >= 1 }, time.Second, time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+
+	cancel()
+
+	select {
+	case gerr := <-cancelledErrCh:
+		require.Error(t, gerr)
+		assert.ErrorIs(t, gerr, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancelled caller did not return after its context was cancelled")
+	}
+
+	close(release)
+	select {
+	case gerr := <-survivorErrCh:
+		require.NoError(t, gerr)
+	case <-time.After(time.Second):
+		t.Fatal("survivor caller did not return after refresh completed")
+	}
+	owner := <-survivorOwnerCh
+	require.NotNil(t, owner)
+	assert.Equal(t, tc.executorID, owner.ExecutorID)
+	assert.EqualValues(t, 1, getCalls.Load(), "the in-flight Get must outlive the cancelled leader")
+}
+
+// Concurrent stats misses for the same executor must collapse to 1 etcd Get.
+func TestNamespaceShardToExecutor_GetExecutorStatistics_SingleFlightDedup(t *testing.T) {
+	tc := setupNamespaceShardToExecutorTestCase(t)
+	defer tc.ctrl.Finish()
+	defer close(tc.stopCh)
+
+	statsKey := etcdkeys.BuildExecutorKey(tc.prefix, tc.namespace, tc.executorID, etcdkeys.ExecutorShardStatisticsKey)
+
+	stats := map[string]etcdtypes.ShardStatistics{
+		"shard-1": {SmoothedLoad: 42.0},
+	}
+	payload, err := json.Marshal(stats)
+	require.NoError(t, err)
+	writer, err := common.NewRecordWriter("")
+	require.NoError(t, err)
+	compressedPayload, err := writer.Write(payload)
+	require.NoError(t, err)
+
+	release := make(chan struct{})
+	var getCalls atomic.Int32
+	tc.etcdClient.EXPECT().
+		Get(gomock.Any(), statsKey).
+		DoAndReturn(func(ctx context.Context, _ string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+			getCalls.Add(1)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return &clientv3.GetResponse{Kvs: []*mvccpb.KeyValue{
+				{Key: []byte(statsKey), Value: compressedPayload},
+			}}, nil
+		}).
+		AnyTimes()
+
+	const numCallers = 20
+	var wg sync.WaitGroup
+	results := make([]map[string]etcdtypes.ShardStatistics, numCallers)
+	errs := make([]error, numCallers)
+	start := make(chan struct{})
+	for i := 0; i < numCallers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = tc.e.GetExecutorStatistics(context.Background(), tc.executorID)
+		}(i)
+	}
+	close(start)
+
+	require.Eventually(t, func() bool { return getCalls.Load() >= 1 }, time.Second, time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+
+	close(release)
+	wg.Wait()
+
+	require.EqualValues(t, 1, getCalls.Load(), "concurrent stats misses should collapse to one etcd Get")
+	for i := 0; i < numCallers; i++ {
+		require.NoError(t, errs[i])
+		assert.Equal(t, stats, results[i])
+	}
+}
+
+// A hung etcd Get must not hold the singleflight key forever: the bounded
+// refresh context must time out, surface DeadlineExceeded to waiters, and
+// release the flight so the next caller can trigger a fresh Get.
+func TestNamespaceShardToExecutor_GetShardOwner_RefreshContextHasBoundedTimeout(t *testing.T) {
+	tc := setupNamespaceShardToExecutorTestCase(t)
+	defer tc.ctrl.Finish()
+	defer close(tc.stopCh)
+	tc.e.refreshTimeout = 50 * time.Millisecond
+
+	var getCalls atomic.Int32
+	tc.etcdClient.EXPECT().
+		Get(gomock.Any(), tc.executorPrefix, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+			getCalls.Add(1)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).
+		AnyTimes()
+
+	// Use a generous caller deadline so the timeout we observe must come from
+	// the refresh's own bounded context, not the caller's.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := tc.e.GetShardOwner(ctx, "shard-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.EqualValues(t, 1, getCalls.Load())
+
+	// Flight must be released so the next caller triggers a fresh Get.
+	_, err = tc.e.GetShardOwner(ctx, "shard-1")
+	require.Error(t, err)
+	assert.EqualValues(t, 2, getCalls.Load(), "second caller should trigger a new Get, not join the previous flight")
+}
