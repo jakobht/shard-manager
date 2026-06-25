@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/fx"
+	"go.uber.org/yarpc"
 
 	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/log/tag"
@@ -55,8 +56,11 @@ type ManagerParams struct {
 	Logger          log.Logger
 	MetricsClient   metrics.Client
 	ElectionFactory election.Factory
-	Lifecycle       fx.Lifecycle
-	DrainObserver   clientcommon.DrainSignalObserver `optional:"true"`
+	// Dispatcher dependency enforces lifecycle ordering so manager.Stop runs
+	// before dispatcher.Stop during shutdown.
+	Dispatcher    *yarpc.Dispatcher
+	Lifecycle     fx.Lifecycle
+	DrainObserver clientcommon.DrainSignalObserver `optional:"true"`
 }
 
 // NewManager creates a new namespace manager

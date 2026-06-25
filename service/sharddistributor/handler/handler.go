@@ -68,6 +68,7 @@ func NewHandler(
 		storage:              storage,
 		timeSource:           timeSource,
 	}
+	handler.stopCtx, handler.cancel = context.WithCancel(context.Background())
 
 	handler.batcher = newShardBatcher(timeSource, ephemeralBatchInterval, handler.assignEphemeralBatch)
 
@@ -80,6 +81,8 @@ type handlerImpl struct {
 	logger log.Logger
 
 	startWG sync.WaitGroup
+	stopCtx context.Context
+	cancel  context.CancelFunc
 
 	storage              store.Store
 	shardDistributionCfg config.ShardDistribution
@@ -95,6 +98,9 @@ func (h *handlerImpl) Start() {
 }
 
 func (h *handlerImpl) Stop() {
+	if h.cancel != nil {
+		h.cancel()
+	}
 	h.batcher.Stop()
 }
 
@@ -324,8 +330,15 @@ func (h *handlerImpl) ListNamespaces(_ context.Context, _ *types.ListNamespacesR
 func (h *handlerImpl) WatchNamespaceState(request *types.WatchNamespaceStateRequest, server WatchNamespaceStateServer) error {
 	h.startWG.Wait()
 
+	var stopDone <-chan struct{}
+	subscribeCtx := server.Context()
+	if h.stopCtx != nil {
+		stopDone = h.stopCtx.Done()
+		subscribeCtx = h.stopCtx
+	}
+
 	// Subscribe to state changes from storage
-	assignmentChangesChan, unSubscribe, err := h.storage.SubscribeToAssignmentChanges(server.Context(), request.Namespace)
+	assignmentChangesChan, unSubscribe, err := h.storage.SubscribeToAssignmentChanges(subscribeCtx, request.Namespace)
 	defer unSubscribe()
 	if err != nil {
 		return &types.InternalServiceError{Message: fmt.Sprintf("failed to subscribe to namespace state: %v", err)}
@@ -336,6 +349,8 @@ func (h *handlerImpl) WatchNamespaceState(request *types.WatchNamespaceStateRequ
 		select {
 		case <-server.Context().Done():
 			return server.Context().Err()
+		case <-stopDone:
+			return h.stopCtx.Err()
 		case assignmentChanges, ok := <-assignmentChangesChan:
 			if !ok {
 				return fmt.Errorf("unexpected close of updates channel")
