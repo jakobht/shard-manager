@@ -16,6 +16,8 @@ import (
 
 	"github.com/cadence-workflow/shard-manager/common"
 	"github.com/cadence-workflow/shard-manager/common/clock"
+	"github.com/cadence-workflow/shard-manager/common/log"
+	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/common/log/testlogger"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	metricmocks "github.com/cadence-workflow/shard-manager/common/metrics/mocks"
@@ -1167,6 +1169,127 @@ func TestEmitOldestExecutorHeartbeatLag(t *testing.T) {
 			}
 
 			processor.emitOldestExecutorHeartbeatLag(namespaceState, metricsScope)
+
+			metricsScope.AssertExpectations(t)
+		})
+	}
+}
+
+func TestEmitMaxOwnersPerShardMetric(t *testing.T) {
+	tests := []struct {
+		name                 string
+		shardAssignments     map[string]store.AssignedState
+		expectedMaxExecutors float64
+		expectedErrorShards  map[string][]string
+	}{
+		{
+			name:                 "no shards",
+			shardAssignments:     map[string]store.AssignedState{},
+			expectedMaxExecutors: 0,
+		},
+		{
+			name: "single shard, single executor",
+			shardAssignments: map[string]store.AssignedState{
+				"exec-1": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+					},
+				},
+			},
+			expectedMaxExecutors: 1,
+		},
+		{
+			name: "multiple executors, different shard counts",
+			shardAssignments: map[string]store.AssignedState{
+				"exec-1": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+						"shard-2": {Status: types.AssignmentStatusREADY},
+						"shard-3": {Status: types.AssignmentStatusREADY},
+					},
+				},
+				"exec-2": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-4": {Status: types.AssignmentStatusREADY},
+					},
+				},
+			},
+			expectedMaxExecutors: 1,
+		},
+		{
+			name: "multiple executors, multiple owners per shard",
+			shardAssignments: map[string]store.AssignedState{
+				"exec-1": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+						"shard-2": {Status: types.AssignmentStatusREADY},
+						"shard-3": {Status: types.AssignmentStatusREADY},
+					},
+				},
+				"exec-2": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-2": {Status: types.AssignmentStatusREADY},
+						"shard-3": {Status: types.AssignmentStatusREADY},
+						"shard-4": {Status: types.AssignmentStatusREADY},
+					},
+				},
+			},
+			expectedErrorShards: map[string][]string{
+				"shard-2": {"exec-1", "exec-2"},
+				"shard-3": {"exec-1", "exec-2"},
+			},
+			expectedMaxExecutors: 2,
+		},
+		{
+			name: "multi-owned shard below the max owner count",
+			shardAssignments: map[string]store.AssignedState{
+				"exec-1": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+						"shard-2": {Status: types.AssignmentStatusREADY},
+					},
+				},
+				"exec-2": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+						"shard-2": {Status: types.AssignmentStatusREADY},
+					},
+				},
+				"exec-3": {
+					AssignedShards: map[string]*types.ShardAssignment{
+						"shard-1": {Status: types.AssignmentStatusREADY},
+					},
+				},
+			},
+			expectedErrorShards: map[string][]string{
+				"shard-1": {"exec-1", "exec-2", "exec-3"},
+				"shard-2": {"exec-1", "exec-2"},
+			},
+			expectedMaxExecutors: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mocks := setupProcessorTest(t, config.NamespaceTypeFixed)
+			defer mocks.ctrl.Finish()
+			processor := mocks.factory.CreateProcessor(mocks.cfg, mocks.store, mocks.election).(*namespaceProcessor)
+
+			metricsScope := &metricmocks.Scope{}
+			metricsScope.On("UpdateGauge", metrics.ShardDistributorMaxExecutorsPerShard, tt.expectedMaxExecutors).Once()
+
+			loggerMock := log.NewMockLogger(mocks.ctrl)
+			processor.logger = loggerMock
+			expectedLogMessage := "shard owned by multiple executors"
+			for shardID, executors := range tt.expectedErrorShards {
+				loggerMock.EXPECT().Error(expectedLogMessage,
+					tag.ShardKey(shardID),
+					tag.ShardExecutors(executors),
+					tag.ShardNamespace("test-ns"),
+				).Return()
+			}
+
+			processor.emitMaxOwnersPerShardMetric(tt.shardAssignments, metricsScope)
 
 			metricsScope.AssertExpectations(t)
 		})

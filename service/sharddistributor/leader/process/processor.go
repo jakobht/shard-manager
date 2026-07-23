@@ -491,6 +491,7 @@ func (p *namespaceProcessor) rebalanceShardsImpl(ctx context.Context, metricsLoo
 	}
 
 	p.emitActiveShardMetric(namespaceState.ShardAssignments, metricsLoopScope)
+	p.emitMaxOwnersPerShardMetric(namespaceState.ShardAssignments, metricsLoopScope)
 	return nil
 }
 
@@ -505,6 +506,37 @@ func (p *namespaceProcessor) emitActiveShardMetric(shardAssignments map[string]s
 func (p *namespaceProcessor) emitExecutorMetric(namespaceState *store.NamespaceState, metricsLoopScope metrics.Scope) {
 	for status, count := range namespaceState.CountExecutorsByStatus() {
 		metricsLoopScope.Tagged(metrics.ExecutorStatusTag(status.String())).UpdateGauge(metrics.ShardDistributorTotalExecutors, float64(count))
+	}
+}
+
+func (p *namespaceProcessor) emitMaxOwnersPerShardMetric(shardAssignments map[string]store.AssignedState, metricsLoopScope metrics.Scope) {
+	shardToExecutors := make(map[string][]string)
+	maxOwners := 0
+	errorShards := make([]string, 0)
+	for executorID, assignedState := range shardAssignments {
+		for shardID := range assignedState.AssignedShards {
+			shardToExecutors[shardID] = append(shardToExecutors[shardID], executorID)
+
+			count := len(shardToExecutors[shardID])
+			if count > maxOwners {
+				maxOwners = count
+			}
+			// Each multi-owned shard crosses count 2 exactly once.
+			if count == 2 {
+				errorShards = append(errorShards, shardID)
+			}
+		}
+	}
+
+	metricsLoopScope.UpdateGauge(metrics.ShardDistributorMaxExecutorsPerShard, float64(maxOwners))
+
+	for _, shardID := range errorShards {
+		executors := shardToExecutors[shardID]
+		sort.Strings(executors)
+		p.logger.Error("shard owned by multiple executors",
+			tag.ShardKey(shardID),
+			tag.ShardExecutors(executors),
+			tag.ShardNamespace(p.namespaceCfg.Name))
 	}
 }
 
