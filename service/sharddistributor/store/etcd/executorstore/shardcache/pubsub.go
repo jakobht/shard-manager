@@ -18,7 +18,7 @@ import (
 // the latest state, so the subscriber always catches up to the most recent
 // state rather than being stuck on a stale intermediate state.
 type executorStatePubSub struct {
-	mu          sync.RWMutex
+	mu          sync.Mutex
 	subscribers map[string]chan map[*store.ShardOwner][]string
 	logger      log.Logger
 	namespace   string
@@ -58,8 +58,8 @@ func (p *executorStatePubSub) unSubscribe(uniqueID string) {
 // If a subscriber already has a pending message, it is drained and replaced
 // with the new state so the subscriber always sees the latest.
 func (p *executorStatePubSub) publish(state map[*store.ShardOwner][]string) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	for _, sub := range p.subscribers {
 		select {
