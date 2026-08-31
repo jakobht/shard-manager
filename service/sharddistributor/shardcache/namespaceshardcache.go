@@ -18,7 +18,6 @@ import (
 	"github.com/cadence-workflow/shard-manager/common/log/tag"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store"
-	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/etcdclient"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/etcdkeys"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/etcdtypes"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/executorstore/common"
@@ -50,19 +49,12 @@ type namespaceShardToExecutor struct {
 	drainedShards    map[string]struct{} // set of shard IDs marked drained
 	lastRevision     int64               // etcd store revision of the last applied snapshot
 	namespace        string
-	etcdPrefix       string
+	executorStore    store.Store
 	stopCh           chan struct{}
 	logger           log.Logger
-	client           etcdclient.Client
 	timeSource       clock.TimeSource
 	pubSub           *executorStatePubSub
 	metricsClient    metrics.Client
-
-	// namespacePrefix is watched and read as one range, and the keyspaces below it are
-	// partitioned by the prefixes that follow
-	namespacePrefix     string
-	executorsPrefix     string
-	drainedShardsPrefix string
 
 	// refreshSF deduplicates concurrent cache-miss refreshes. When N callers
 	// simultaneously miss the cache, only one of them performs the etcd read;
@@ -88,26 +80,22 @@ func newNamespaceExecutorStatistics() *namespaceExecutorStatistics {
 	}
 }
 
-func newNamespaceShardToExecutor(etcdPrefix, namespace string, client etcdclient.Client, stopCh chan struct{}, logger log.Logger, timeSource clock.TimeSource, metricsClient metrics.Client) (*namespaceShardToExecutor, error) {
+func newNamespaceShardToExecutor(namespace string, executorStore store.Store, stopCh chan struct{}, logger log.Logger, timeSource clock.TimeSource, metricsClient metrics.Client) (*namespaceShardToExecutor, error) {
 	return &namespaceShardToExecutor{
-		shardToExecutor:     make(map[string]*store.ShardOwner),
-		executorState:       make(map[*store.ShardOwner][]string),
-		executorRevision:    make(map[string]int64),
-		shardOwners:         make(map[string]*store.ShardOwner),
-		drainedShards:       make(map[string]struct{}),
-		namespace:           namespace,
-		etcdPrefix:          etcdPrefix,
-		namespacePrefix:     etcdkeys.BuildNamespacePrefix(etcdPrefix, namespace),
-		executorsPrefix:     etcdkeys.BuildExecutorsPrefix(etcdPrefix, namespace),
-		drainedShardsPrefix: etcdkeys.BuildDrainedShardsPrefix(etcdPrefix, namespace),
-		stopCh:              stopCh,
-		logger:              logger.WithTags(tag.ShardNamespace(namespace)),
-		client:              client,
-		timeSource:          timeSource,
-		pubSub:              newExecutorStatePubSub(logger, namespace, timeSource),
-		executorStatistics:  newNamespaceExecutorStatistics(),
-		metricsClient:       metricsClient,
-		refreshTimeout:      refreshOperationTimeout,
+		shardToExecutor:    make(map[string]*store.ShardOwner),
+		executorState:      make(map[*store.ShardOwner][]string),
+		executorRevision:   make(map[string]int64),
+		shardOwners:        make(map[string]*store.ShardOwner),
+		drainedShards:      make(map[string]struct{}),
+		namespace:          namespace,
+		executorStore:      executorStore,
+		stopCh:             stopCh,
+		logger:             logger.WithTags(tag.ShardNamespace(namespace)),
+		timeSource:         timeSource,
+		pubSub:             newExecutorStatePubSub(logger, namespace, timeSource),
+		executorStatistics: newNamespaceExecutorStatistics(),
+		metricsClient:      metricsClient,
+		refreshTimeout:     refreshOperationTimeout,
 	}, nil
 }
 
@@ -167,6 +155,7 @@ func (n *namespaceShardToExecutor) GetExecutor(ctx context.Context, executorID s
 	return nil, store.ErrExecutorNotFound
 }
 
+/*
 func (n *namespaceShardToExecutor) GetExecutorModRevisionCmp() ([]clientv3.Cmp, error) {
 	n.RLock()
 	defer n.RUnlock()
@@ -178,6 +167,7 @@ func (n *namespaceShardToExecutor) GetExecutorModRevisionCmp() ([]clientv3.Cmp, 
 
 	return comparisons, nil
 }
+*/
 
 func (n *namespaceShardToExecutor) GetExecutorStatistics(ctx context.Context, executorID string) (map[string]etcdtypes.ShardStatistics, error) {
 	if stats, found := n.getStats(executorID); found {
@@ -206,51 +196,6 @@ func (n *namespaceShardToExecutor) getStats(executorID string) (map[string]etcdt
 	}
 
 	return nil, false
-}
-
-// populateExecutorStatisticsCacheOnMiss fetches executor statistics from etcd
-// and caches them, deduplicating concurrent misses for the same executor.
-func (n *namespaceShardToExecutor) populateExecutorStatisticsCacheOnMiss(ctx context.Context, executorID string) error {
-	ch := n.statsSF.DoChan(executorID, func() (interface{}, error) {
-		fetchCtx, cancel := context.WithTimeout(context.Background(), n.refreshTimeout)
-		defer cancel()
-		return nil, n.fetchAndCacheExecutorStatistics(fetchCtx, executorID)
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case res := <-ch:
-		return res.Err
-	}
-}
-
-func (n *namespaceShardToExecutor) fetchAndCacheExecutorStatistics(ctx context.Context, executorID string) error {
-	statsKey := etcdkeys.BuildExecutorKey(n.etcdPrefix, n.namespace, executorID, etcdkeys.ExecutorShardStatisticsKey)
-	resp, err := n.client.Get(ctx, statsKey)
-	if err != nil {
-		return fmt.Errorf("get executor shard statistics: %w", err)
-	}
-
-	n.executorStatistics.Lock()
-	defer n.executorStatistics.Unlock()
-
-	// The watch loop may have populated the cache while reading etcd.
-	// In that case, do not overwrite the newer cached value.
-	if _, ok := n.executorStatistics.stats[executorID]; ok {
-		return nil
-	}
-
-	if len(resp.Kvs) > 0 {
-		stats := make(map[string]etcdtypes.ShardStatistics)
-		if err := common.DecompressAndUnmarshal(resp.Kvs[0].Value, &stats); err != nil {
-			return fmt.Errorf("parse executor shard statistics: %w", err)
-		}
-		n.executorStatistics.stats[executorID] = stats
-	} else {
-		return store.ErrExecutorNotFound
-	}
-	return nil
 }
 
 func (n *namespaceShardToExecutor) Subscribe(ctx context.Context) (<-chan map[*store.ShardOwner][]string, func()) {
@@ -333,13 +278,7 @@ func (n *namespaceShardToExecutor) watch(triggerCh chan<- struct{}) error {
 		Tagged(metrics.NamespaceTag(n.namespace)).
 		Tagged(metrics.ShardDistributorWatchTypeTag("cache_refresh"))
 
-	watchChan := n.client.Watch(
-		// WithRequireLeader ensures that the etcd cluster has a leader
-		clientv3.WithRequireLeader(ctx),
-		n.namespacePrefix,
-		clientv3.WithPrefix(),
-		clientv3.WithPrevKV(),
-	)
+	watchChan := n.executorStore.WatchNamespace(ctx, n.namespace)
 
 	for {
 		select {

@@ -6,12 +6,12 @@ import (
 	"sync"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/fx"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
 	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/metrics"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store"
-	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/etcdclient"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/store/etcd/etcdtypes"
 )
 
@@ -19,31 +19,32 @@ type NamespaceToShards map[string]*namespaceShardToExecutor
 type ShardToExecutorCache struct {
 	sync.RWMutex
 	namespaceToShards NamespaceToShards
+	store             store.Store
 	timeSource        clock.TimeSource
-	client            etcdclient.Client
 	stopC             chan struct{}
 	logger            log.Logger
-	prefix            string
 	wg                sync.WaitGroup
 	metricsClient     metrics.Client
 }
 
-func NewShardToExecutorCache(
-	prefix string,
-	client etcdclient.Client,
-	logger log.Logger,
-	timeSource clock.TimeSource,
-	metricsClient metrics.Client,
-) *ShardToExecutorCache {
+type CacheParams struct {
+	fx.In
+
+	store         store.Store
+	logger        log.Logger
+	timeSource    clock.TimeSource
+	metricsClient metrics.Client
+}
+
+func NewShardToExecutorCache(p CacheParams) *ShardToExecutorCache {
 	shardCache := &ShardToExecutorCache{
 		namespaceToShards: make(NamespaceToShards),
-		timeSource:        timeSource,
+		store:             p.store,
+		timeSource:        p.timeSource,
 		stopC:             make(chan struct{}),
-		logger:            logger,
-		prefix:            prefix,
-		client:            client,
+		logger:            p.logger,
 		wg:                sync.WaitGroup{},
-		metricsClient:     metricsClient,
+		metricsClient:     p.metricsClient,
 	}
 
 	return shardCache
@@ -123,7 +124,7 @@ func (s *ShardToExecutorCache) getNamespaceShardToExecutor(namespace string) (*n
 		return namespaceShardToExecutor, nil
 	}
 
-	namespaceShardToExecutor, err := newNamespaceShardToExecutor(s.prefix, namespace, s.client, s.stopC, s.logger, s.timeSource, s.metricsClient)
+	namespaceShardToExecutor, err := newNamespaceShardToExecutor(namespace, s.store, s.stopC, s.logger, s.timeSource, s.metricsClient)
 	if err != nil {
 		return nil, fmt.Errorf("new namespace shard to executor: %w", err)
 	}

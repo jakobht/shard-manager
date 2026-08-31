@@ -43,7 +43,6 @@ type executorStoreImpl struct {
 	client        etcdclient.Client
 	prefix        string
 	logger        log.Logger
-	shardCache    *shardcache.ShardToExecutorCache
 	timeSource    clock.TimeSource
 	recordWriter  *common.RecordWriter
 	cfg           *config.Config
@@ -88,7 +87,6 @@ func NewStore(p ExecutorStoreParams) (store.Store, error) {
 		client:        p.Client,
 		prefix:        p.ETCDConfig.Prefix,
 		logger:        p.Logger,
-		shardCache:    shardCache,
 		timeSource:    timeSource,
 		recordWriter:  recordWriter,
 		cfg:           p.Config,
@@ -101,11 +99,9 @@ func NewStore(p ExecutorStoreParams) (store.Store, error) {
 }
 
 func (s *executorStoreImpl) Start() {
-	s.shardCache.Start()
 }
 
 func (s *executorStoreImpl) Stop() {
-	s.shardCache.Stop()
 }
 
 // --- HeartbeatStore Implementation ---
