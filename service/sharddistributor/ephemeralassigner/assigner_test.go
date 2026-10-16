@@ -355,7 +355,6 @@ func TestAssignEphemeralBatch(t *testing.T) {
 // InternalServiceError; the assigner wraps it rather than panicking.
 func TestAssignEphemeralBatch_InvalidLoadBalancingMode(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
 
 	mockStorage := store.NewMockStore(ctrl)
 	a := &Assigner{
