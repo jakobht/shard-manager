@@ -195,49 +195,34 @@ func TestShardCache_nextDelay(t *testing.T) {
 	errStore := errors.New("etcd unavailable")
 
 	tests := []struct {
-		name     string
-		err      error
-		retrier  backoff.Retrier
-		minDelay time.Duration
-		maxDelay time.Duration
+		name    string
+		err     error
+		retrier backoff.Retrier
+		want    time.Duration
 	}{
 		{
-			name:     "success waits for the reconcile",
-			retrier:  newRefreshRetrier(timeSource),
-			minDelay: jitterMin(reconcileInterval, reconcileJitterCoeff),
-			maxDelay: jitterMax(reconcileInterval, reconcileJitterCoeff),
+			name:    "success waits for the reconcile",
+			retrier: newRefreshRetrier(timeSource),
+			want:    reconcileInterval,
 		},
 		{
 			name:    "failure waits for the first retry",
 			err:     errStore,
 			retrier: newRefreshRetrier(timeSource),
-			// The backoff policy jitters down to 80% of the interval.
-			minDelay: refreshRetryInitialInterval * 8 / 10,
-			maxDelay: refreshRetryInitialInterval,
+			want:    refreshRetryInitialInterval,
 		},
 		{
-			name:     "failure with an exhausted retrier falls back to the max retry interval",
-			err:      errStore,
-			retrier:  exhaustedRetrier,
-			minDelay: refreshRetryMaxInterval,
-			maxDelay: refreshRetryMaxInterval,
+			name:    "failure with an exhausted retrier falls back to the max retry interval",
+			err:     errStore,
+			retrier: exhaustedRetrier,
+			want:    refreshRetryMaxInterval,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			delay := newTestShardCache(t, "ns", nil).nextDelay(tt.err, tt.retrier)
-			assert.GreaterOrEqual(t, delay, tt.minDelay)
-			assert.LessOrEqual(t, delay, tt.maxDelay)
+			assert.Equal(t, tt.want, newTestShardCache(t, "ns", nil).nextDelay(tt.err, tt.retrier))
 		})
 	}
-}
-
-// jitterMin and jitterMax bound what backoff.JitDuration(d, coeff) returns.
-func jitterMin(d time.Duration, coeff float64) time.Duration {
-	return time.Duration(float64(d) * (1 - coeff))
-}
-func jitterMax(d time.Duration, coeff float64) time.Duration {
-	return time.Duration(float64(d) * (1 + coeff))
 }
 
 func TestShardCache_replaceNamespaceState_skipsStaleRevision(t *testing.T) {

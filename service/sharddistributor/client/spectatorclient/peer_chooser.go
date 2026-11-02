@@ -223,7 +223,7 @@ func (c *SpectatorPeerChooser) startEvictionLoop() {
 		// Tick at half the TTL so a peer is evicted within at most 1.5x the TTL
 		// after its last use (worst case: eviction check just missed, then TTL passes,
 		// then next tick fires at TTL/2 later).
-		ticker := c.timeSource.NewTicker(c.peerTTL / 2)
+		ticker := c.timeSource.NewJitteredTicker(c.peerTTL / 2)
 		defer ticker.Stop()
 		for {
 			select {

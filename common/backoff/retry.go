@@ -22,7 +22,6 @@ package backoff
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
@@ -40,15 +39,6 @@ type (
 	// IsRetryable handler can be used to exclude certain errors during retry
 	IsRetryable func(error) bool
 
-	// ConcurrentRetrier is used for client-side throttling. It determines whether to
-	// throttle outgoing traffic in case downstream backend server rejects
-	// requests due to out-of-quota or server busy errors.
-	ConcurrentRetrier struct {
-		sync.Mutex
-		retrier      Retrier // Backoff retrier
-		failureCount int64   // Number of consecutive failures seen
-	}
-
 	// ThrottleRetryOption sets the options of ThrottleRetry
 	ThrottleRetryOption func(*ThrottleRetry)
 
@@ -61,52 +51,6 @@ type (
 		clock          clock.TimeSource
 	}
 )
-
-// Throttle Sleep if there were failures since the last success call.
-func (c *ConcurrentRetrier) Throttle() {
-	c.throttleInternal()
-}
-
-func (c *ConcurrentRetrier) throttleInternal() time.Duration {
-	next := done
-
-	// Check if we have failure count.
-	failureCount := c.failureCount
-	if failureCount > 0 {
-		defer c.Unlock()
-		c.Lock()
-		if c.failureCount > 0 {
-			next = c.retrier.NextBackOff()
-		}
-	}
-
-	if next != done {
-		time.Sleep(next)
-	}
-
-	return next
-}
-
-// Succeeded marks client request succeeded.
-func (c *ConcurrentRetrier) Succeeded() {
-	defer c.Unlock()
-	c.Lock()
-	c.failureCount = 0
-	c.retrier.Reset()
-}
-
-// Failed marks client request failed because backend is busy.
-func (c *ConcurrentRetrier) Failed() {
-	defer c.Unlock()
-	c.Lock()
-	c.failureCount++
-}
-
-// NewConcurrentRetrier returns an instance of concurrent backoff retrier.
-func NewConcurrentRetrier(retryPolicy RetryPolicy) *ConcurrentRetrier {
-	retrier := NewRetrier(retryPolicy, clock.NewRealTimeSource())
-	return &ConcurrentRetrier{retrier: retrier}
-}
 
 // NewThrottleRetry returns a retry handler with given options
 func NewThrottleRetry(opts ...ThrottleRetryOption) *ThrottleRetry {
@@ -219,7 +163,7 @@ func (tr *ThrottleRetry) Do(ctx context.Context, op Operation) error {
 				return prevErr
 			}
 			return err
-		case <-tr.clock.After(next):
+		case <-tr.clock.JitteredAfter(next):
 		}
 	}
 }

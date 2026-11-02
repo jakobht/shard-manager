@@ -210,7 +210,7 @@ func (p *namespaceProcessor) runRebalancingLoop(ctx context.Context) {
 			// If an update comes in before the cooldown has expired,
 			// we wait until the cooldown has passed since the last rebalance before processing it.
 			// This ensures that we don't rebalance too frequently in response to a flurry of updates
-			p.timeSource.Sleep(nextRebalanceAllowedAt.Sub(p.timeSource.Now()))
+			p.timeSource.JitteredSleep(nextRebalanceAllowedAt.Sub(p.timeSource.Now()))
 			nextRebalanceAllowedAt = p.timeSource.Now().Add(p.cfg.RebalanceCooldown)
 
 			p.logger.Info("Rebalancing triggered", tag.Dynamic("triggerReason", triggerReason))
@@ -243,7 +243,7 @@ func (p *namespaceProcessor) runRebalanceTriggeringLoop(ctx context.Context, tri
 }
 
 func (p *namespaceProcessor) rebalanceTriggeringLoop(ctx context.Context, updateChan <-chan int64, triggerChan chan<- string) {
-	ticker := p.timeSource.NewTicker(p.cfg.Period)
+	ticker := p.timeSource.NewJitteredTicker(p.cfg.Period)
 	defer ticker.Stop()
 
 	tryTriggerRebalancing := func(reason string) {
@@ -276,7 +276,7 @@ func (p *namespaceProcessor) rebalanceTriggeringLoop(ctx context.Context, update
 
 // runShardStatsCleanupLoop periodically removes stale shard statistics.
 func (p *namespaceProcessor) runShardStatsCleanupLoop(ctx context.Context) {
-	ticker := p.timeSource.NewTicker(p.cfg.HeartbeatTTL)
+	ticker := p.timeSource.NewJitteredTicker(p.cfg.HeartbeatTTL)
 	defer ticker.Stop()
 
 	for {

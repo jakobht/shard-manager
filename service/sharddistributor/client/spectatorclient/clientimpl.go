@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/cadence-workflow/shard-manager/client/sharddistributor"
-	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
@@ -26,8 +25,7 @@ import (
 type stateFn func(ctx context.Context) stateFn
 
 const (
-	streamRetryInterval    = 1 * time.Second
-	streamRetryJitterCoeff = 0.1 // 10% jitter (900ms - 1100ms)
+	streamRetryInterval = 1 * time.Second
 )
 
 // ShardOwner contains information about the executor that owns a shard
@@ -114,7 +112,7 @@ func (s *spectatorImpl) connectState(ctx context.Context) stateFn {
 		}
 
 		s.logger.Error("Failed to create stream, retrying", zap.Error(err), zap.String(tag.Namespace, s.namespace))
-		if err := s.timeSource.SleepWithContext(ctx, backoff.JitDuration(streamRetryInterval, streamRetryJitterCoeff)); err != nil {
+		if err := s.timeSource.JitteredSleepWithContext(ctx, streamRetryInterval); err != nil {
 			return nil
 		}
 		return s.connectState
@@ -150,7 +148,7 @@ func (s *spectatorImpl) enabledState(ctx context.Context) stateFn {
 				s.logger.Warn("Stream recv error, will reconnect", zap.Error(err), zap.String(tag.Namespace, s.namespace))
 			}
 
-			if err := s.timeSource.SleepWithContext(ctx, backoff.JitDuration(streamRetryInterval, streamRetryJitterCoeff)); err != nil {
+			if err := s.timeSource.JitteredSleepWithContext(ctx, streamRetryInterval); err != nil {
 				return nil
 			}
 			return s.connectState
@@ -176,7 +174,7 @@ func (s *spectatorImpl) disabledState(ctx context.Context) stateFn {
 	for {
 		// Sleep for a short period of time before checking again.
 		// If the context is cancelled, we return nil to exit the loop.
-		if err := s.timeSource.SleepWithContext(ctx, backoff.JitDuration(streamRetryInterval, streamRetryJitterCoeff)); err != nil {
+		if err := s.timeSource.JitteredSleepWithContext(ctx, streamRetryInterval); err != nil {
 			return nil
 		}
 		if s.enabled() {

@@ -10,7 +10,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
 	"github.com/cadence-workflow/shard-manager/common/types"
 	"github.com/cadence-workflow/shard-manager/service/sharddistributor/client/clientcommon"
@@ -29,7 +28,6 @@ const (
 )
 
 const (
-	heartbeatJitterCoeff           = 0.1              // 10% jitter
 	processorAsyncOperationTimeout = 10 * time.Second //  maximum time allowed for a shard processor Start or Stop call.
 )
 
@@ -168,7 +166,7 @@ func (e *executorImpl[SP]) drainChannel() <-chan struct{} {
 }
 
 func (e *executorImpl[SP]) heartbeatloop(ctx context.Context) {
-	heartBeatTimer := e.timeSource.NewTimer(backoff.JitDuration(e.heartBeatInterval, heartbeatJitterCoeff))
+	heartBeatTimer := e.timeSource.NewJitteredTimer(e.heartBeatInterval)
 	defer heartBeatTimer.Stop()
 
 	drainCh := e.drainChannel()
@@ -196,9 +194,9 @@ func (e *executorImpl[SP]) heartbeatloop(ctx context.Context) {
 
 			e.logger.Info("undrain signal received, resuming heartbeat")
 			drainCh = e.drainObserver.Drain()
-			heartBeatTimer.Reset(backoff.JitDuration(e.heartBeatInterval, heartbeatJitterCoeff))
+			heartBeatTimer.Reset(e.heartBeatInterval)
 		case <-heartBeatTimer.Chan():
-			heartBeatTimer.Reset(backoff.JitDuration(e.heartBeatInterval, heartbeatJitterCoeff))
+			heartBeatTimer.Reset(e.heartBeatInterval)
 			// Skip heartbeating while disabled (e.g. not yet onboarded). The
 			// guard is re-checked every tick so the executor starts heartbeating
 			// as soon as it becomes enabled.
@@ -354,7 +352,7 @@ func (e *executorImpl[SP]) addManagerProcessor(ctx context.Context, shardID stri
 		managedProcessor.setState(processorStateStarted)
 	}()
 	go func() {
-		timer := e.timeSource.NewTimer(processorAsyncOperationTimeout)
+		timer := e.timeSource.NewJitteredTimer(processorAsyncOperationTimeout)
 		defer timer.Stop()
 		select {
 		case <-done:
@@ -387,7 +385,7 @@ func (e *executorImpl[SP]) stopManagerProcessor(shardID string) <-chan struct{} 
 		managedProcessor.processor.Stop()
 	}()
 	go func() {
-		timer := e.timeSource.NewTimer(processorAsyncOperationTimeout)
+		timer := e.timeSource.NewJitteredTimer(processorAsyncOperationTimeout)
 		defer timer.Stop()
 		select {
 		case <-done:
@@ -406,7 +404,7 @@ func (e *executorImpl[SP]) shardCleanUpLoop(ctx context.Context) {
 		return
 	}
 	e.logger.Info("cleanUpLoop configured", zap.Any(tag.TTLShard, e.ttlShard))
-	shardCleanUpTimer := e.timeSource.NewTimer(backoff.JitDuration(e.ttlShard, heartbeatJitterCoeff))
+	shardCleanUpTimer := e.timeSource.NewJitteredTimer(e.ttlShard)
 	defer shardCleanUpTimer.Stop()
 
 	for {
@@ -434,7 +432,7 @@ func (e *executorImpl[SP]) shardCleanUpLoop(ctx context.Context) {
 				}
 				return true
 			})
-			shardCleanUpTimer.Reset(backoff.JitDuration(e.ttlShard, heartbeatJitterCoeff))
+			shardCleanUpTimer.Reset(e.ttlShard)
 		}
 	}
 }

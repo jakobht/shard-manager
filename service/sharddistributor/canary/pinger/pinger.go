@@ -12,15 +12,13 @@ import (
 	"go.uber.org/zap"
 
 	sharddistributorv1 "github.com/cadence-workflow/shard-manager/.gen/proto/sharddistributor/v1"
-	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
 )
 
 //go:generate mockgen -package $GOPACKAGE -destination canary_client_mock.go github.com/cadence-workflow/shard-manager/.gen/proto/sharddistributor/v1 ShardDistributorExecutorCanaryAPIYARPCClient
 
 const (
-	pingInterval    = 1 * time.Second
-	pingJitterCoeff = 0.1 // 10% jitter
+	pingInterval = 1 * time.Second
 )
 
 // Pinger periodically pings shard owners in the fixed namespace
@@ -77,7 +75,7 @@ func (p *Pinger) Stop() {
 func (p *Pinger) pingLoop() {
 	defer p.wg.Done()
 
-	ticker := p.timeSource.NewTicker(backoff.JitDuration(pingInterval, pingJitterCoeff))
+	ticker := p.timeSource.NewJitteredTicker(pingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -87,7 +85,7 @@ func (p *Pinger) pingLoop() {
 			return
 		case <-ticker.Chan():
 			p.pingRandomShard()
-			ticker.Reset(backoff.JitDuration(pingInterval, pingJitterCoeff))
+			ticker.Reset(pingInterval)
 		}
 	}
 }

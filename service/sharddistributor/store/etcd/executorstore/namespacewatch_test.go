@@ -344,7 +344,7 @@ func TestSubscribeToNamespaceChanges_RetriesFailedWatch(t *testing.T) {
 	timeSource.BlockUntil(1)
 	require.False(t, closed.Load(), "a failed watch must not end the subscription")
 
-	timeSource.Advance(2 * namespaceWatchRetryInterval)
+	timeSource.Advance(namespaceWatchRetryInterval)
 	close(watchChanClosed)
 	timeSource.BlockUntil(1)
 	require.False(t, closed.Load(), "a closed watch channel must not end the subscription")

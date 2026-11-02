@@ -86,7 +86,7 @@ func ShardCreatorModule(namespace []string) fx.Option {
 func (s *ShardCreator) process(ctx context.Context) {
 	defer s.goRoutineWg.Done()
 
-	ticker := s.timeSource.NewTicker(shardCreationInterval)
+	ticker := s.timeSource.NewJitteredTicker(shardCreationInterval)
 	defer ticker.Stop()
 
 	for {

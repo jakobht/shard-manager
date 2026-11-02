@@ -333,7 +333,7 @@ func TestStreamReconnection(t *testing.T) {
 	// BlockUntil(2) because connectState creates an AfterFunc timer (waiter #1)
 	// and the retry SleepWithContext creates another (waiter #2)
 	mockTimeSource.BlockUntil(2)
-	mockTimeSource.Advance(2 * time.Second)
+	mockTimeSource.Advance(streamRetryInterval)
 
 	require.NoError(t, spectator.firstStateSignal.Wait(context.Background()))
 
@@ -387,10 +387,10 @@ func TestWatchLoopDisabled(t *testing.T) {
 
 	// Disabled state enters a sleep loop, verify it sleeps periodically
 	timeSource.BlockUntil(1)
-	timeSource.Advance(1200 * time.Millisecond)
+	timeSource.Advance(streamRetryInterval)
 
 	timeSource.BlockUntil(1)
-	timeSource.Advance(1200 * time.Millisecond)
+	timeSource.Advance(streamRetryInterval)
 
 	// Stop exits cleanly and calls Done() on the signal
 	spectator.Stop()

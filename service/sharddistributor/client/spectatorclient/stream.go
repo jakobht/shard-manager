@@ -28,7 +28,7 @@ func newSpectatorStream(
 	namespace string,
 ) (*spectatorStream, error) {
 	streamCtx, streamCancel := context.WithCancel(ctx)
-	timer := timeSource.AfterFunc(defaultStreamTimeout, streamCancel)
+	timer := timeSource.JitteredAfterFunc(defaultStreamTimeout, streamCancel)
 
 	stream, err := client.WatchNamespaceState(streamCtx, &types.WatchNamespaceStateRequest{
 		Namespace: namespace,

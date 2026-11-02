@@ -156,7 +156,7 @@ func TestHeartBeatLoop(t *testing.T) {
 
 	// Make sure the heartbeat loop has done an iteration and assigned the shards to the executor
 	mockTimeSource.BlockUntil(1)
-	mockTimeSource.Advance(15 * time.Second)
+	mockTimeSource.Advance(executor.heartBeatInterval)
 	time.Sleep(10 * time.Millisecond) // Force the heartbeatloop goroutine to run
 	mockTimeSource.BlockUntil(1)
 
@@ -915,7 +915,7 @@ func TestHeartbeatLoop_DrainSignal(t *testing.T) {
 
 				// Trigger a heartbeat
 				mockTimeSource.BlockUntil(1)
-				mockTimeSource.Advance(15 * time.Second)
+				mockTimeSource.Advance(executor.heartBeatInterval)
 				time.Sleep(10 * time.Millisecond)
 
 				// Signal drain
@@ -983,7 +983,7 @@ func TestHeartbeatLoop_DrainSignal(t *testing.T) {
 
 				// Phase 1: heartbeat, then drain
 				mockTimeSource.BlockUntil(1)
-				mockTimeSource.Advance(15 * time.Second)
+				mockTimeSource.Advance(executor.heartBeatInterval)
 				time.Sleep(10 * time.Millisecond)
 
 				observer.SignalDrain()
@@ -994,7 +994,7 @@ func TestHeartbeatLoop_DrainSignal(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 
 				mockTimeSource.BlockUntil(1)
-				mockTimeSource.Advance(15 * time.Second)
+				mockTimeSource.Advance(executor.heartBeatInterval)
 				time.Sleep(10 * time.Millisecond)
 
 				cancel()
@@ -1052,7 +1052,7 @@ func TestHeartbeatLoop_DrainSignal(t *testing.T) {
 
 				// Initial heartbeat
 				mockTimeSource.BlockUntil(1)
-				mockTimeSource.Advance(15 * time.Second)
+				mockTimeSource.Advance(executor.heartBeatInterval)
 				time.Sleep(10 * time.Millisecond)
 
 				// Drain #1
@@ -1064,7 +1064,7 @@ func TestHeartbeatLoop_DrainSignal(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 
 				mockTimeSource.BlockUntil(1)
-				mockTimeSource.Advance(15 * time.Second)
+				mockTimeSource.Advance(executor.heartBeatInterval)
 				time.Sleep(10 * time.Millisecond)
 
 				// Drain #2

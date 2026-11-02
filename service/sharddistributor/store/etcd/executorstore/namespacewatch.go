@@ -10,7 +10,6 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/cadence-workflow/shard-manager/common/backoff"
 	"github.com/cadence-workflow/shard-manager/common/clock"
 	"github.com/cadence-workflow/shard-manager/common/log"
 	"github.com/cadence-workflow/shard-manager/common/log/tag"
@@ -20,9 +19,7 @@ import (
 )
 
 const (
-	// Namespace watch retries land between 50ms and 150ms apart.
 	namespaceWatchRetryInterval = 100 * time.Millisecond
-	namespaceWatchJitterCoeff   = 0.5
 )
 
 // namespaceWatcher turns etcd namespace watches into coalesced change signals. It owns
@@ -112,10 +109,7 @@ func (w *namespaceWatcher) SubscribeToNamespaceChanges(namespace string) (<-chan
 			}
 
 			select {
-			case <-w.timeSource.After(backoff.JitDuration(
-				namespaceWatchRetryInterval,
-				namespaceWatchJitterCoeff,
-			)):
+			case <-w.timeSource.JitteredAfter(namespaceWatchRetryInterval):
 			case <-w.watchCtx.Done():
 				return
 			}

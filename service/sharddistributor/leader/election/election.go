@@ -135,7 +135,7 @@ func (e *elector) Run(ctx context.Context) <-chan bool {
 					case <-runCtx.Done():
 						e.logger.Info("Context canceled, stopping election loop, exit immediately", tag.Error(runCtx.Err()))
 						return // Context was canceled, exit immediately
-					case <-e.clock.After(e.cfg.FailedElectionCooldown):
+					case <-e.clock.JitteredAfter(e.cfg.FailedElectionCooldown):
 						e.logger.Info("Cooldown period ended, retrying election")
 						// Continue after cooldown
 					}
@@ -160,7 +160,7 @@ func (e *elector) runElection(ctx context.Context, leaderCh chan<- bool) (err er
 	e.logger.Debug("Adding random delay before campaigning", tag.ElectionDelay(delay))
 
 	select {
-	case <-e.clock.After(delay):
+	case <-e.clock.JitteredAfter(delay):
 		e.logger.Debug("Random delay before campaigning completed")
 		// Continue after delay
 	case <-ctx.Done():
@@ -212,7 +212,7 @@ func (e *elector) runElection(ctx context.Context, leaderCh chan<- bool) (err er
 	e.logger.Info("Became leader")
 
 	// Start a timer to voluntarily resign after the leadership period
-	leaderTimer := e.clock.NewTimer(e.cfg.LeaderPeriod)
+	leaderTimer := e.clock.NewJitteredTimer(e.cfg.LeaderPeriod)
 	defer leaderTimer.Stop()
 
 	// Watch for session expiration, context cancellation, or timer expiration

@@ -33,8 +33,7 @@ const (
 	refreshRetryMaxInterval     = time.Second
 
 	// Reconcile interval for periodic reconciliations.
-	reconcileInterval    = 10 * time.Second
-	reconcileJitterCoeff = 0.2
+	reconcileInterval = 10 * time.Second
 )
 
 type shardCache struct {
@@ -193,7 +192,7 @@ func (c *shardCache) namespaceRefreshLoop(changeCh <-chan struct{}) {
 
 // waitForRefresh waits for a change signal or delay, returning false on stop.
 func (c *shardCache) waitForRefresh(changeCh <-chan struct{}, delay time.Duration) bool {
-	timer := c.timeSource.NewTimer(delay)
+	timer := c.timeSource.NewJitteredTimer(delay)
 	defer timer.Stop()
 
 	select {
@@ -217,11 +216,9 @@ func (c *shardCache) waitForRefresh(changeCh <-chan struct{}, delay time.Duratio
 func (c *shardCache) nextDelay(err error, retrier backoff.Retrier) time.Duration {
 	if err == nil {
 		retrier.Reset()
-		return backoff.JitDuration(reconcileInterval, reconcileJitterCoeff)
+		return reconcileInterval
 	}
 
-	// The watch signals every host at once. The retry policy already jitters below its max,
-	// so jittering again here would overshoot refreshRetryMaxInterval.
 	// An exhausted retrier returns a non-positive delay, so this defensively falls back to the max
 	// retry interval, we should never stop retrying.
 	retryIn := retrier.NextBackOff()

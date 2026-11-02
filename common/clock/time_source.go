@@ -30,15 +30,18 @@ import (
 type (
 	// TimeSource provides an interface that packages can use instead of directly using
 	// the [time] module, so that chronology-related behavior can be tested.
+	// Real waits, including Reset, fire up to 20% late and never early. Mocked waits are exact.
+	// Unjittered waits are deliberately not offered. Any future one needs a name that warns callers off.
 	TimeSource interface {
-		After(d time.Duration) <-chan time.Time
-		Sleep(d time.Duration)
-		SleepWithContext(ctx context.Context, d time.Duration) error
+		JitteredAfter(d time.Duration) <-chan time.Time
+		JitteredSleep(d time.Duration)
+		JitteredSleepWithContext(ctx context.Context, d time.Duration) error
 		Now() time.Time
 		Since(t time.Time) time.Duration
-		NewTicker(d time.Duration) Ticker
-		NewTimer(d time.Duration) Timer
-		AfterFunc(d time.Duration, f func()) Timer
+		// NewJitteredTicker jitters the period once, and again on every Reset.
+		NewJitteredTicker(d time.Duration) Ticker
+		NewJitteredTimer(d time.Duration) Timer
+		JitteredAfterFunc(d time.Duration, f func()) Timer
 		ContextWithTimeout(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		ContextWithDeadline(context.Context, time.Time) (context.Context, context.CancelFunc)
 	}
@@ -117,21 +120,29 @@ func (r *clock) ContextWithDeadline(ctx context.Context, t time.Time) (context.C
 	return context.WithDeadline(ctx, t)
 }
 
-func (r *clock) NewTicker(d time.Duration) Ticker {
-	return r.Clock.NewTicker(d)
+func (r *clock) JitteredAfter(d time.Duration) <-chan time.Time {
+	return r.Clock.After(jitter(d))
 }
 
-func (r *clock) NewTimer(d time.Duration) Timer {
-	return r.Clock.NewTimer(d)
+func (r *clock) JitteredSleep(d time.Duration) {
+	r.Clock.Sleep(jitter(d))
 }
 
-func (r *clock) AfterFunc(d time.Duration, f func()) Timer {
-	return r.Clock.AfterFunc(d, f)
+func (r *clock) NewJitteredTicker(d time.Duration) Ticker {
+	return jitteredTicker{r.Clock.NewTicker(jitter(d))}
 }
 
-func (r *clock) SleepWithContext(ctx context.Context, duration time.Duration) error {
+func (r *clock) NewJitteredTimer(d time.Duration) Timer {
+	return jitteredTimer{r.Clock.NewTimer(jitter(d))}
+}
+
+func (r *clock) JitteredAfterFunc(d time.Duration, f func()) Timer {
+	return jitteredTimer{r.Clock.AfterFunc(jitter(d), f)}
+}
+
+func (r *clock) JitteredSleepWithContext(ctx context.Context, duration time.Duration) error {
 	select {
-	case <-r.After(duration):
+	case <-r.JitteredAfter(duration):
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -146,15 +157,23 @@ func NewMockedTimeSource() MockedTimeSource {
 	}
 }
 
-func (c *fakeClock) NewTicker(d time.Duration) Ticker {
+func (c *fakeClock) JitteredAfter(d time.Duration) <-chan time.Time {
+	return c.FakeClock.After(d)
+}
+
+func (c *fakeClock) JitteredSleep(d time.Duration) {
+	c.FakeClock.Sleep(d)
+}
+
+func (c *fakeClock) NewJitteredTicker(d time.Duration) Ticker {
 	return c.FakeClock.NewTicker(d)
 }
 
-func (c *fakeClock) NewTimer(d time.Duration) Timer {
+func (c *fakeClock) NewJitteredTimer(d time.Duration) Timer {
 	return c.FakeClock.NewTimer(d)
 }
 
-func (c *fakeClock) AfterFunc(d time.Duration, f func()) Timer {
+func (c *fakeClock) JitteredAfterFunc(d time.Duration, f func()) Timer {
 	return c.FakeClock.AfterFunc(d, f)
 }
 
@@ -166,9 +185,9 @@ func (c *fakeClock) ContextWithDeadline(ctx context.Context, deadline time.Time)
 	return clockwork.WithDeadline(ctx, c.FakeClock, deadline)
 }
 
-func (c *fakeClock) SleepWithContext(ctx context.Context, duration time.Duration) error {
+func (c *fakeClock) JitteredSleepWithContext(ctx context.Context, duration time.Duration) error {
 	select {
-	case <-c.After(duration):
+	case <-c.FakeClock.After(duration):
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

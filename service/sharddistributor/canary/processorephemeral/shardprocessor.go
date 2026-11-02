@@ -78,7 +78,7 @@ func (p *ShardProcessor) Start(_ context.Context) error {
 	if delay := p.kind.StartDelay(); delay > 0 {
 		p.metricsScope.Tagged(map[string]string{"lifecycle": "start"}).
 			Counter(canarymetrics.CanaryShardLifecycleInjected).Inc(1)
-		p.timeSource.Sleep(delay)
+		p.timeSource.JitteredSleep(delay)
 	}
 
 	p.metricsScope.Counter(canarymetrics.CanaryShardStarted).Inc(1)
@@ -99,7 +99,7 @@ func (p *ShardProcessor) Stop() {
 	if delay := p.kind.StopDelay(); delay > 0 {
 		p.metricsScope.Tagged(map[string]string{"lifecycle": "stop"}).
 			Counter(canarymetrics.CanaryShardLifecycleInjected).Inc(1)
-		p.timeSource.Sleep(delay)
+		p.timeSource.JitteredSleep(delay)
 	}
 
 	p.metricsScope.Counter(canarymetrics.CanaryShardStopped).Inc(1)
@@ -114,7 +114,7 @@ func (p *ShardProcessor) SetShardStatus(status types.ShardStatus) {
 func (p *ShardProcessor) process() {
 	defer p.goRoutineWg.Done()
 
-	ticker := p.timeSource.NewTicker(processInterval)
+	ticker := p.timeSource.NewJitteredTicker(processInterval)
 	defer ticker.Stop()
 
 	for {

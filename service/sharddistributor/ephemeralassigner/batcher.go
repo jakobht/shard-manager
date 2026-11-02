@@ -183,7 +183,7 @@ func (b *shardBatcher) loop() {
 
 func (b *shardBatcher) scheduleFlush(ready chan<- struct{}) {
 	go func() {
-		timer := b.timeSource.NewTimer(b.coalescingWindow(b.namespace))
+		timer := b.timeSource.NewJitteredTimer(b.coalescingWindow(b.namespace))
 		defer timer.Stop()
 		select {
 		case <-timer.Chan():

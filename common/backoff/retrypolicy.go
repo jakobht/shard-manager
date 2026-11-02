@@ -22,7 +22,6 @@ package backoff
 
 import (
 	"math"
-	"math/rand"
 	"time"
 
 	"github.com/cadence-workflow/shard-manager/common/clock"
@@ -183,15 +182,8 @@ func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, num
 		return done
 	}
 
-	// add jitter to avoid global synchronization
-	jitterPortion := int(0.2 * nextInterval)
-	// Prevent overflow
-	if jitterPortion < 1 {
-		jitterPortion = 1
-	}
-	nextInterval = nextInterval*0.8 + float64(rand.Intn(jitterPortion))
-
-	return time.Duration(nextInterval)
+	// Bounds apply before the clock's jitter, so the actual wait can exceed them by up to 20%.
+	return nextDuration
 }
 
 // ComputeNextDelay returns the next delay interval.
